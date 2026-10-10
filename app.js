@@ -33,6 +33,27 @@ function stockOf(pid){
   for(const v of Object.values(S.ventas)) if(v.productoId===pid) s -= Number(v.cantidad)||0;
   return s;
 }
+// Lotes: el stock inicial del sabor + cada reposición. Cada lote tiene su costo y precio.
+function lotsOf(pid){
+  const p=S.prods[pid]; if(!p) return [];
+  const lots=[{id:'ini:'+pid, ini:true, fecha:'', creado:0, cant:Number(p.stockInicial)||0, costo:Number(p.costo)||0, precio:Number(p.precio)||0}];
+  for(const c of Object.values(S.compras)) if(c.productoId===pid) lots.push({id:c.id, fecha:c.fecha||'', creado:c.creado||0, cant:Number(c.cantidad)||0,
+    costo:Number(c.costoUnit)||Number(p.costo)||0, precio:(c.precioUnit!=null&&c.precioUnit!=='')?(Number(c.precioUnit)||0):(Number(p.precio)||0)});
+  lots.sort((a,b)=>(a.ini?-1:b.ini?1:0)||a.fecha.localeCompare(b.fecha)||a.creado-b.creado);
+  lots.forEach(l=>l.restante=l.cant);
+  const vs=Object.values(S.ventas).filter(v=>v.productoId===pid).sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||'')||(a.creado||0)-(b.creado||0));
+  const fifo=q=>{ for(const l of lots){ if(q<=0) break; const t=Math.min(l.restante,q); if(t>0){ l.restante-=t; q-=t; } } if(q>0 && lots.length) lots[lots.length-1].restante-=q; };
+  for(const v of vs.filter(v=>v.loteId)){ let q=Number(v.cantidad)||0; const l=lots.find(x=>x.id===v.loteId);
+    if(l){ const t=Math.min(Math.max(l.restante,0),q); l.restante-=t; q-=t; } if(q>0) fifo(q); }
+  for(const v of vs.filter(v=>!v.loteId)) fifo(Number(v.cantidad)||0);
+  return lots;
+}
+// Agrupa los lotes de un sabor por costo+precio: cada grupo es una "variante" que se ve por separado
+function variantsOf(pid){
+  const m=new Map();
+  for(const l of lotsOf(pid)){ const k=l.costo+'|'+l.precio; if(!m.has(k)) m.set(k,{key:k, costo:l.costo, precio:l.precio, restante:0, lots:[]}); const g=m.get(k); g.lots.push(l); g.restante+=l.restante; }
+  return [...m.values()];
+}
 const prodName = pid => S.prods[pid]?.sabor || '(sabor borrado)';
 const clientName = cid => S.clients[cid]?.nombre || '(cliente borrado)';
 const userName = u => S.users[u]?.nombre || S.users[u]?.usuario || '(usuario borrado)';
@@ -149,7 +170,7 @@ function viewResumen(){
   const sinCosto=vs.some(v=>!Number(v.costoUnit));
   const ops=vs.length;
   const stockTot=Object.keys(S.prods).reduce((a,id)=>a+Math.max(0,stockOf(id)),0);
-  const valorStock=Object.keys(S.prods).reduce((a,id)=>a+Math.max(0,stockOf(id))*(Number(S.prods[id].precio)||0),0);
+  const valorStock=Object.keys(S.prods).reduce((a,id)=>a+variantsOf(id).reduce((b,g)=>b+Math.max(0,g.restante)*g.precio,0),0);
   const reponer=Object.values(S.prods).filter(p=>stockOf(p.id)<=(Number(p.stockMin)||0)).length;
   const clientesPer=new Set(vs.map(v=>v.clienteId)).size;
 
@@ -211,15 +232,17 @@ function viewVentas(){
     <label>Cliente ${S.ventaClienteNuevo
       ? `<input id="v-cli-nuevo" placeholder="Nombre del cliente nuevo" required maxlength="50">`
       : `<select id="v-cli" required><option value="">Elegí…</option>${clients.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}<option value="__new">+ Cliente nuevo</option></select>`}</label>
-    <label>Sabor<select id="v-prod" required><option value="">Elegí…</option>${prods.map(p=>{const s=stockOf(p.id);return `<option value="${p.id}" ${s<=0?'disabled':''}>${esc(p.sabor)} (${s} en stock)</option>`}).join('')}</select></label>
+    <label>Sabor<select id="v-prod" required><option value="">Elegí…</option>${prods.map(p=>{const vs=variantsOf(p.id).filter(g=>g.restante>0);
+      if(!vs.length) return `<option disabled>${esc(p.sabor)} (0 en stock)</option>`;
+      return vs.map(g=>`<option value="${p.id}::${g.key}">${esc(p.sabor)}${vs.length>1||g.precio?` — ${money(g.precio)}`:''} (${g.restante} en stock)</option>`).join('')}).join('')}</select></label>
     <label>Cantidad<input type="number" id="v-cant" min="1" step="1" value="1" required></label>
     <label>Precio unitario<input type="number" id="v-precio" min="0" step="1" placeholder="$"></label>
     <label>Medio de pago<select id="v-medio">${MEDIOS.map(m=>`<option>${m}</option>`).join('')}</select></label>
     <button class="btn" type="submit" ${prods.length?'':'disabled'}>Guardar venta</button>
   </form></section>
   <section class="panel"><div class="panel-head"><div><h2>Ventas</h2><span class="sub num">${list.length} ventas · ${money(tot)}</span></div>${periodSelect()}</div>
-  ${list.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Sabor</th><th class="r">Cant.</th><th class="r">Total</th><th>Pago</th><th>Vendedor</th><th></th></tr></thead><tbody>
-  ${list.map(v=>`<tr><td class="num">${fmtDate(v.fecha)}</td><td>${esc(clientName(v.clienteId))}</td><td>${esc(prodName(v.productoId))}</td><td class="r num">${v.cantidad}</td><td class="r num">${money(ventaTotal(v))}</td><td>${esc(v.medio||'')}</td><td>${esc(userName(v.vendedor))}</td>
+  ${list.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Sabor</th><th class="r">Cant.</th><th class="r">Precio u.</th><th class="r">Total</th><th>Pago</th><th>Vendedor</th><th></th></tr></thead><tbody>
+  ${list.map(v=>`<tr><td class="num">${fmtDate(v.fecha)}</td><td>${esc(clientName(v.clienteId))}</td><td>${esc(prodName(v.productoId))}</td><td class="r num">${v.cantidad}</td><td class="r num">${money(v.precioUnit)}</td><td class="r num">${money(ventaTotal(v))}</td><td>${esc(v.medio||'')}</td><td>${esc(userName(v.vendedor))}</td>
   <td class="r">${(admin||v.vendedor===S.me)? delBtn('ventas',v.id) : ''}</td></tr>`).join('')}</tbody></table></div>`:`<p class="empty">No hay ventas en este período. Cargá la primera arriba.</p>`}
   </section>`;
 }
@@ -246,13 +269,13 @@ function viewStock(){
     <button class="btn" type="submit">Agregar</button>
   </form></section>`:''}
   <section class="panel"><div class="panel-head"><h2>Stock por sabor</h2><span class="sub">Stock actual = inicial + compras − ventas</span></div>
-  ${prods.length?`<div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th>Modelo</th><th class="r">Costo</th><th class="r">Precio</th><th class="r">Vendidas</th><th class="r">Stock</th><th>Estado</th>${admin?'<th></th>':''}</tr></thead><tbody>
+  ${prods.length?`<div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th>Modelo</th><th class="r">Costo</th><th class="r">Precio</th><th class="r">Vendidas</th><th class="r">Stock</th><th>Por precio</th><th>Estado</th>${admin?'<th></th>':''}</tr></thead><tbody>
   ${prods.map(p=>{const s=stockOf(p.id); const st= s<=0?['Sin stock','bad']: s<=(Number(p.stockMin)||0)?['Reponer','warn']:['OK','ok'];
     return `<tr><td><b>${esc(p.sabor)}</b></td><td class="sub">${esc(p.modelo||'')} ${p.puffs?`· ${n0.format(p.puffs)} puffs`:''}</td>
     <td class="r">${admin?`<input class="num" style="width:96px;text-align:right" type="number" min="0" data-edit="${p.id}" data-f="costo" value="${Number(p.costo)||''}" placeholder="$" aria-label="Costo de ${esc(p.sabor)}">`:money(p.costo)}</td>
     <td class="r">${admin?`<input class="num" style="width:96px;text-align:right" type="number" min="0" data-edit="${p.id}" data-f="precio" value="${Number(p.precio)||''}" placeholder="$" aria-label="Precio de ${esc(p.sabor)}">`:money(p.precio)}</td>
-    <td class="r num">${sold[p.id]||0}</td><td class="r num"><b>${s}</b></td><td><span class="pill ${st[1]}">${st[0]}</span></td>${admin?`<td class="r">${delBtn('productos',p.id)}</td>`:''}</tr>`}).join('')}
-  </tbody></table></div>${admin?'<p class="sub">Tocá costo o precio para editarlos; se guardan al salir del campo.</p>':''}`:`<p class="empty">Todavía no hay sabores cargados.</p>`}
+    <td class="r num">${sold[p.id]||0}</td><td class="r num"><b>${s}</b></td><td class="sub">${(()=>{const vs=variantsOf(p.id).filter(g=>g.restante>0); return vs.length>1? vs.map(g=>`<span style="white-space:nowrap">${g.restante} a ${money(g.precio)} <span title="costo">(c. ${money(g.costo)})</span></span>`).join('<br>') : '—';})()}</td><td><span class="pill ${st[1]}">${st[0]}</span></td>${admin?`<td class="r">${delBtn('productos',p.id)}</td>`:''}</tr>`}).join('')}
+  </tbody></table></div>${admin?'<p class="sub">Costo y precio de acá son los del stock inicial (y se usan de base para nuevas reposiciones). Cada reposición tiene su propio costo y precio, que se editan en Compras. Si un sabor tiene unidades a precios distintos, se ven separadas en "Por precio" y en Ventas.</p>':''}`:`<p class="empty">Todavía no hay sabores cargados.</p>`}
   </section>`;
 }
 
@@ -279,20 +302,22 @@ function viewCompras(){
   const list=Object.values(S.compras).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')||(b.creado||0)-(a.creado||0));
   const inv=list.reduce((a,c)=>a+(Number(c.cantidad)||0)*(Number(c.costoUnit)||0),0);
   return `
-  <section class="panel"><div class="panel-head"><h2>Registrar reposición</h2><span class="sub">Suma al stock del sabor</span></div>
+  <section class="panel"><div class="panel-head"><h2>Registrar reposición</h2><span class="sub">Suma al stock del sabor. Si el costo o precio es distinto, queda separado</span></div>
   ${admin?`<form class="form" id="f-compra" autocomplete="off">
     <label>Fecha<input type="date" id="k-fecha" value="${today()}" required></label>
     <label>Sabor<select id="k-prod" required><option value="">Elegí…</option>${prods.map(p=>`<option value="${p.id}">${esc(p.sabor)}</option>`).join('')}</select></label>
     <label>Cantidad<input type="number" id="k-cant" min="1" value="1" required></label>
     <label>Costo unitario<input type="number" id="k-costo" min="0" placeholder="$"></label>
+    <label>Precio de venta<input type="number" id="k-precio" min="0" placeholder="$"></label>
     <button class="btn" type="submit">Guardar compra</button>
   </form>`:`<p class="note">Solo el administrador registra compras de mercadería.</p>`}</section>
   <section class="panel"><div class="panel-head"><div><h2>Compras</h2><span class="sub num">Invertido: ${money(inv)}</span></div></div>
-  ${list.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Sabor</th><th class="r">Cant.</th><th class="r">Costo u.</th><th class="r">Total</th><th>Cargó</th>${admin?'<th></th>':''}</tr></thead><tbody>
-  ${list.map(c=>`<tr><td class="num">${fmtDate(c.fecha)}</td><td>${esc(prodName(c.productoId))}</td><td class="r num">${c.cantidad}</td><td class="r num">${money(c.costoUnit)}</td><td class="r num">${money((c.cantidad||0)*(c.costoUnit||0))}</td><td>${esc(userName(c.vendedor))}</td>${admin?`<td class="r">${delBtn('compras',c.id)}</td>`:''}</tr>`).join('')}
+  ${list.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Sabor</th><th class="r">Cant.</th><th class="r">Costo u.</th><th class="r">Precio u.</th><th class="r">Total</th><th>Cargó</th>${admin?'<th></th>':''}</tr></thead><tbody>
+  ${list.map(c=>`<tr><td class="num">${fmtDate(c.fecha)}</td><td>${esc(prodName(c.productoId))}</td><td class="r num">${c.cantidad}</td><td class="r">${admin?cInput(c,'costoUnit'):money(c.costoUnit)}</td><td class="r">${admin?cInput(c,'precioUnit'):money(c.precioUnit!=null?c.precioUnit:S.prods[c.productoId]?.precio)}</td><td class="r num">${money((c.cantidad||0)*(c.costoUnit||0))}</td><td>${esc(userName(c.vendedor))}</td>${admin?`<td class="r">${delBtn('compras',c.id)}</td>`:''}</tr>`).join('')}
   </tbody></table></div>`:`<p class="empty">Sin reposiciones registradas.</p>`}</section>`;
 }
 
+function cInput(c,f){ const v=c[f]!=null?c[f]:(f==='precioUnit'?S.prods[c.productoId]?.precio:''); return `<input class="num" style="width:96px;text-align:right" type="number" min="0" data-cedit="${c.id}" data-f="${f}" value="${Number(v)||''}" placeholder="$" aria-label="${f==='costoUnit'?'Costo':'Precio'}">`; }
 function viewMatrix(){
   const prods=Object.values(S.prods).sort((a,b)=>a.sabor.localeCompare(b.sabor));
   const m={}; Object.values(S.ventas).forEach(v=>{ m[v.clienteId]=m[v.clienteId]||{}; m[v.clienteId][v.productoId]=(m[v.clienteId][v.productoId]||0)+(Number(v.cantidad)||0); });
@@ -389,21 +414,24 @@ function bindApp(){
   const vcli=document.getElementById('v-cli');
   if(vcli) vcli.onchange=()=>{ if(vcli.value==='__new'){ S.ventaClienteNuevo=true; keepVentaForm(()=>{ render(); document.getElementById('v-cli-nuevo')?.focus(); }); } };
   const vprod=document.getElementById('v-prod');
-  if(vprod) vprod.onchange=()=>{ const p=S.prods[vprod.value]; const pr=document.getElementById('v-precio'); if(p && Number(p.precio)) pr.value=p.precio; };
+  if(vprod) vprod.onchange=()=>{ const [pid,key]=vprod.value.split('::'); const g=variantsOf(pid).find(x=>x.key===key); const pr=document.getElementById('v-precio'); if(g && g.precio) pr.value=g.precio; };
   const fv=document.getElementById('f-venta');
   if(fv) fv.onsubmit=async e=>{ e.preventDefault();
-    const fecha=document.getElementById('v-fecha').value; const pid=document.getElementById('v-prod').value;
-    const cant=parseInt(document.getElementById('v-cant').value,10); const precio=Number(document.getElementById('v-precio').value)||Number(S.prods[pid]?.precio)||0;
+    const fecha=document.getElementById('v-fecha').value; const [pid,vkey]=document.getElementById('v-prod').value.split('::');
+    const vg=variantsOf(pid).find(x=>x.key===vkey);
+    const cant=parseInt(document.getElementById('v-cant').value,10); const precio=Number(document.getElementById('v-precio').value)||vg?.precio||0;
     const medio=document.getElementById('v-medio').value;
     if(!pid||!(cant>0)) return toast('Elegí sabor y cantidad');
-    const st=stockOf(pid); if(cant>st) return toast(`Solo hay ${st} de ${prodName(pid)}`);
+    if(!vg) return toast('Elegí el sabor de nuevo');
+    if(cant>vg.restante) return toast(`Solo hay ${vg.restante} de ${prodName(pid)} a ${money(vg.precio)}`);
+    const lote=vg.lots.find(l=>l.restante>0)||vg.lots[0];
     let cid;
     if(S.ventaClienteNuevo){ const nombre=document.getElementById('v-cli-nuevo').value.trim(); if(!nombre) return toast('Escribí el nombre del cliente');
       const ex=Object.values(S.clients).find(c=>c.nombre.toLowerCase()===nombre.toLowerCase());
       if(ex) cid=ex.id; else { try{ const ref=await S.db.collection('clientes').add({nombre, contacto:'', creado:Date.now(), creadoPor:S.me}); cid=ref.id; }catch(err){ return toast(writeErr(err)); } }
     } else { cid=document.getElementById('v-cli').value; if(!cid||cid==='__new') return toast('Elegí un cliente'); }
     const btn=fv.querySelector('button[type=submit]'); btn.disabled=true;
-    await save(()=>S.db.collection('ventas').add({fecha, clienteId:cid, productoId:pid, cantidad:cant, precioUnit:precio, costoUnit:Number(S.prods[pid]?.costo)||0, medio, vendedor:S.me, creado:Date.now()}), `Venta guardada: ${cant} × ${prodName(pid)}`);
+    await save(()=>S.db.collection('ventas').add({fecha, clienteId:cid, productoId:pid, cantidad:cant, precioUnit:precio, costoUnit:vg.costo, loteId:lote.id, medio, vendedor:S.me, creado:Date.now()}), `Venta guardada: ${cant} × ${prodName(pid)}`);
     S.ventaClienteNuevo=false; render();
   };
 
@@ -423,7 +451,17 @@ function bindApp(){
   const fk=document.getElementById('f-compra');
   if(fk) fk.onsubmit=e=>{ e.preventDefault(); const pid=document.getElementById('k-prod').value; const cant=parseInt(document.getElementById('k-cant').value,10);
     if(!pid||!(cant>0)) return toast('Elegí sabor y cantidad');
-    save(()=>S.db.collection('compras').add({fecha:document.getElementById('k-fecha').value, productoId:pid, cantidad:cant, costoUnit:Number(document.getElementById('k-costo').value)||0, vendedor:S.me, creado:Date.now()}), `Sumadas ${cant} de ${prodName(pid)}`); };
+    const p=S.prods[pid]; const kc=document.getElementById('k-costo').value, kp=document.getElementById('k-precio').value;
+    const costo=kc!==''?Number(kc)||0:Number(p?.costo)||0, precio=kp!==''?Number(kp)||0:Number(p?.precio)||0;
+    const otros=variantsOf(pid).filter(g=>g.restante>0&&(g.costo!==costo||g.precio!==precio));
+    save(()=>S.db.collection('compras').add({fecha:document.getElementById('k-fecha').value, productoId:pid, cantidad:cant, costoUnit:costo, precioUnit:precio, vendedor:S.me, creado:Date.now()}),
+      `Sumadas ${cant} de ${prodName(pid)}`+(otros.length?' · quedan separadas por tener otro costo/precio':'')); };
+  const kprod=document.getElementById('k-prod');
+  if(kprod) kprod.onchange=()=>{ const ls=lotsOf(kprod.value); const last=ls[ls.length-1]; if(!last) return;
+    const kc=document.getElementById('k-costo'), kp=document.getElementById('k-precio'); if(last.costo) kc.value=last.costo; if(last.precio) kp.value=last.precio; };
+  document.querySelectorAll('[data-cedit]').forEach(inp=>inp.onchange=()=>{ const id=inp.dataset.cedit, f=inp.dataset.f; const val=Number(inp.value)||0;
+    if(S.compras[id] && S.compras[id][f]!=null && (Number(S.compras[id][f])||0)===val) return;
+    save(()=>S.db.doc('compras/'+id).update({[f]:val}), f==='costoUnit'?'Costo actualizado':'Precio actualizado'); });
 
   const fu=document.getElementById('f-user');
   if(fu) fu.onsubmit=async e=>{ e.preventDefault(); const u=normUser(document.getElementById('u-user').value);
