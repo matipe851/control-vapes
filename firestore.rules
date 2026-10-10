@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function userDoc() { return /databases/$(database)/documents/usuarios/$(request.auth.uid); }
+    function isMember() { return signedIn() && exists(userDoc()); }
+    function isAdmin() { return isMember() && get(userDoc()).data.rol == 'admin'; }
+
+    // Marca que ya existe un administrador (la app la lee antes del login)
+    match /config/admin {
+      allow read: if true;
+      allow create: if signedIn()
+        && !exists(/databases/$(database)/documents/config/admin)
+        && request.resource.data.uid == request.auth.uid
+        && getAfter(userDoc()).data.rol == 'admin';
+    }
+
+    match /usuarios/{uid} {
+      allow read: if isMember() || (signedIn() && request.auth.uid == uid);
+      // El primer administrador se crea solo si todavía no hay ninguno
+      allow create: if isAdmin()
+        || (signedIn() && uid == request.auth.uid
+            && request.resource.data.rol == 'admin'
+            && !exists(/databases/$(database)/documents/config/admin)
+            && existsAfter(/databases/$(database)/documents/config/admin));
+      allow update, delete: if isAdmin();
+    }
+
+    match /productos/{id} { allow read: if isMember(); allow write: if isAdmin(); }
+    match /compras/{id}   { allow read: if isMember(); allow write: if isAdmin(); }
+    match /clientes/{id}  { allow read, create: if isMember(); allow update, delete: if isAdmin(); }
+
+    match /ventas/{id} {
+      allow read: if isMember();
+      allow create: if isMember() && request.resource.data.vendedor == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || (isMember() && resource.data.vendedor == request.auth.uid);
+    }
+  }
+}
