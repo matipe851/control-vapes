@@ -1,7 +1,8 @@
 
 (() => {
 const $app = document.getElementById('app');
-const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', authErr:'', confirm:null, ventaClienteNuevo:false };
+const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{} };
+const newLine = () => ({prod:'', cant:'1', precio:''});
 const MEDIOS = ['Efectivo','Transferencia','Mercado Pago'];
 const ars = new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0});
 const n0 = new Intl.NumberFormat('es-AR');
@@ -66,6 +67,7 @@ function inPeriod(fecha){
   if(S.period==='hoy') return fecha===t;
   return true;
 }
+const lineTotal = l => (parseInt(l.cant,10)||0)*(Number(l.precio)||0);
 const ventaTotal = v => (Number(v.cantidad)||0)*(Number(v.precioUnit)||0);
 const ventaGanancia = v => (Number(v.cantidad)||0)*((Number(v.precioUnit)||0)-(Number(v.costoUnit)||0));
 const sortedVentas = () => Object.values(S.ventas).sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||'') || (b.creado||0)-(a.creado||0));
@@ -224,21 +226,37 @@ function viewVentas(){
   const clients=Object.values(S.clients).sort((a,b)=>a.nombre.localeCompare(b.nombre));
   const list=sortedVentas().filter(v=>inPeriod(v.fecha));
   const tot=list.reduce((a,v)=>a+ventaTotal(v),0);
-  return `
-  <section class="panel"><div class="panel-head"><h2>Cargar venta</h2><span class="sub">El stock se descuenta solo</span></div>
-  ${prods.length?'':'<p class="note">Primero hay que cargar sabores en la pestaña Stock.</p>'}
-  <form class="form" id="f-venta" autocomplete="off">
-    <label>Fecha<input type="date" id="v-fecha" value="${today()}" required></label>
-    <label>Cliente ${S.ventaClienteNuevo
-      ? `<input id="v-cli-nuevo" placeholder="Nombre del cliente nuevo" required maxlength="50">`
-      : `<select id="v-cli" required><option value="">Elegí…</option>${clients.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}<option value="__new">+ Cliente nuevo</option></select>`}</label>
-    <label>Sabor<select id="v-prod" required><option value="">Elegí…</option>${prods.map(p=>{const vs=variantsOf(p.id).filter(g=>g.restante>0);
+  if(!S.vLines || !S.vLines.length) S.vLines=[newLine()];
+  const lines=S.vLines;
+  const prodOpts = sel => prods.map(p=>{const vs=variantsOf(p.id).filter(g=>g.restante>0||(p.id+'::'+g.key)===sel);
       if(!vs.length) return `<option disabled>${esc(p.sabor)} (0 en stock)</option>`;
-      return vs.map(g=>`<option value="${p.id}::${g.key}">${esc(p.sabor)}${vs.length>1||g.precio?` — ${money(g.precio)}`:''} (${g.restante} en stock)</option>`).join('')}).join('')}</select></label>
-    <label>Cantidad<input type="number" id="v-cant" min="1" step="1" value="1" required></label>
-    <label>Precio unitario<input type="number" id="v-precio" min="0" step="1" placeholder="$"></label>
-    <label>Medio de pago<select id="v-medio">${MEDIOS.map(m=>`<option>${m}</option>`).join('')}</select></label>
-    <button class="btn" type="submit" ${prods.length?'':'disabled'}>Guardar venta</button>
+      return vs.map(g=>{const val=p.id+'::'+g.key; return `<option value="${val}" ${val===sel?'selected':''}>${esc(p.sabor)}${vs.length>1||g.precio?` — ${money(g.precio)}`:''} (${g.restante} en stock)</option>`}).join('')}).join('');
+  return `
+  <section class="panel"><div class="panel-head"><h2>Cargar venta</h2><span class="sub">Podés cargar varios sabores para el mismo cliente. El stock se descuenta solo</span></div>
+  ${prods.length?'':'<p class="note">Primero hay que cargar sabores en la pestaña Stock.</p>'}
+  <form id="f-venta" autocomplete="off">
+    <div class="form">
+    <label>Fecha<input type="date" id="v-fecha" value="${esc(S.vf.fecha||today())}" required></label>
+    <label>Cliente ${S.ventaClienteNuevo
+      ? `<input id="v-cli-nuevo" placeholder="Nombre del cliente nuevo" required maxlength="50" value="${esc(S.vf.cliNuevo||'')}">`
+      : `<select id="v-cli" required><option value="">Elegí…</option>${clients.map(c=>`<option value="${c.id}" ${S.vf.cli===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}<option value="__new">+ Cliente nuevo</option></select>`}</label>
+    <label>Medio de pago<select id="v-medio">${MEDIOS.map(m=>`<option ${S.vf.medio===m?'selected':''}>${m}</option>`).join('')}</select></label>
+    </div>
+    <div class="vlines">
+      <div class="vline vhead"><span>Sabor</span><span>Cant.</span><span>Precio u.</span><span class="r">Subtotal</span><span></span></div>
+      ${lines.map((l,i)=>`<div class="vline">
+        <select id="vl-prod-${i}" data-vl="${i}" data-vf="prod" aria-label="Sabor ${i+1}" required><option value="">Elegí sabor…</option>${prodOpts(l.prod)}</select>
+        <input id="vl-cant-${i}" data-vl="${i}" data-vf="cant" type="number" min="1" step="1" value="${esc(l.cant)}" aria-label="Cantidad ${i+1}" required>
+        <input id="vl-precio-${i}" data-vl="${i}" data-vf="precio" type="number" min="0" step="1" value="${esc(l.precio)}" placeholder="$" aria-label="Precio unitario ${i+1}">
+        <span class="r num" id="vl-sub-${i}">${money(lineTotal(l))}</span>
+        ${lines.length>1?`<button type="button" class="btn ghost sm" data-vl-del="${i}" aria-label="Quitar sabor ${i+1}">Quitar</button>`:'<span></span>'}
+      </div>`).join('')}
+    </div>
+    <div class="vfoot">
+      <button type="button" class="btn ghost" id="vl-add" ${prods.length?'':'disabled'}>+ Agregar otro sabor</button>
+      <span class="vtotal">Total <b class="num" id="vl-total">${money(lines.reduce((a,l)=>a+lineTotal(l),0))}</b> <span class="sub" id="vl-units">${lines.reduce((a,l)=>a+(parseInt(l.cant,10)||0),0)} u.</span></span>
+      <button class="btn" type="submit" ${prods.length?'':'disabled'}>Guardar venta</button>
+    </div>
   </form></section>
   <section class="panel"><div class="panel-head"><div><h2>Ventas</h2><span class="sub num">${list.length} ventas · ${money(tot)}</span></div>${periodSelect()}</div>
   ${list.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Sabor</th><th class="r">Cant.</th><th class="r">Precio u.</th><th class="r">Total</th><th>Pago</th><th>Vendedor</th><th></th></tr></thead><tbody>
@@ -412,27 +430,51 @@ function bindApp(){
   document.querySelectorAll('[data-del-yes]').forEach(b=>b.onclick=()=>{ const path=b.dataset.delYes; S.confirm=null; save(()=>S.db.doc(path).delete(),'Borrado'); });
 
   const vcli=document.getElementById('v-cli');
-  if(vcli) vcli.onchange=()=>{ if(vcli.value==='__new'){ S.ventaClienteNuevo=true; keepVentaForm(()=>{ render(); document.getElementById('v-cli-nuevo')?.focus(); }); } };
-  const vprod=document.getElementById('v-prod');
-  if(vprod) vprod.onchange=()=>{ const [pid,key]=vprod.value.split('::'); const g=variantsOf(pid).find(x=>x.key===key); const pr=document.getElementById('v-precio'); if(g && g.precio) pr.value=g.precio; };
+  if(vcli) vcli.onchange=()=>{ if(vcli.value==='__new'){ S.ventaClienteNuevo=true; S.vf.cli=''; render(); document.getElementById('v-cli-nuevo')?.focus(); } else S.vf.cli=vcli.value; };
+  const vcn=document.getElementById('v-cli-nuevo'); if(vcn) vcn.oninput=()=>S.vf.cliNuevo=vcn.value;
+  const vfe=document.getElementById('v-fecha'); if(vfe) vfe.onchange=()=>S.vf.fecha=vfe.value;
+  const vme=document.getElementById('v-medio'); if(vme) vme.onchange=()=>S.vf.medio=vme.value;
+  const refreshTotals=()=>{ S.vLines.forEach((l,i)=>{ const el=document.getElementById('vl-sub-'+i); if(el) el.textContent=money(lineTotal(l)); });
+    const t=document.getElementById('vl-total'); if(t) t.textContent=money(S.vLines.reduce((a,l)=>a+lineTotal(l),0));
+    const u=document.getElementById('vl-units'); if(u) u.textContent=S.vLines.reduce((a,l)=>a+(parseInt(l.cant,10)||0),0)+' u.'; };
+  document.querySelectorAll('[data-vl]').forEach(el=>{ const i=+el.dataset.vl, f=el.dataset.vf;
+    if(f==='prod') el.onchange=()=>{ const l=S.vLines[i]; l.prod=el.value; const [pid,key]=el.value.split('::'); const g=variantsOf(pid).find(x=>x.key===key);
+      l.precio = g&&g.precio ? String(g.precio) : ''; const pr=document.querySelector(`[data-vl="${i}"][data-vf="precio"]`); if(pr) pr.value=l.precio; refreshTotals(); };
+    else el.oninput=()=>{ S.vLines[i][f]=el.value; refreshTotals(); };
+  });
+  document.querySelectorAll('[data-vl-del]').forEach(b=>b.onclick=()=>{ S.vLines.splice(+b.dataset.vlDel,1); render(); });
+  const vadd=document.getElementById('vl-add');
+  if(vadd) vadd.onclick=()=>{ S.vLines.push(newLine()); render(); const ss=document.querySelectorAll('[data-vf="prod"]'); ss[ss.length-1]?.focus(); };
   const fv=document.getElementById('f-venta');
   if(fv) fv.onsubmit=async e=>{ e.preventDefault();
-    const fecha=document.getElementById('v-fecha').value; const [pid,vkey]=document.getElementById('v-prod').value.split('::');
-    const vg=variantsOf(pid).find(x=>x.key===vkey);
-    const cant=parseInt(document.getElementById('v-cant').value,10); const precio=Number(document.getElementById('v-precio').value)||vg?.precio||0;
-    const medio=document.getElementById('v-medio').value;
-    if(!pid||!(cant>0)) return toast('Elegí sabor y cantidad');
-    if(!vg) return toast('Elegí el sabor de nuevo');
-    if(cant>vg.restante) return toast(`Solo hay ${vg.restante} de ${prodName(pid)} a ${money(vg.precio)}`);
-    const lote=vg.lots.find(l=>l.restante>0)||vg.lots[0];
+    const fecha=document.getElementById('v-fecha').value; const medio=document.getElementById('v-medio').value;
+    const items=[]; const need={};
+    for(const l of S.vLines){ if(!l.prod) continue;
+      const [pid,vkey]=l.prod.split('::'); const vg=variantsOf(pid).find(x=>x.key===vkey); const cant=parseInt(l.cant,10);
+      if(!vg) return toast(`Elegí de nuevo ${prodName(pid)}`);
+      if(!(cant>0)) return toast(`Poné la cantidad de ${prodName(pid)}`);
+      need[l.prod]=(need[l.prod]||0)+cant;
+      if(need[l.prod]>vg.restante) return toast(`Solo hay ${vg.restante} de ${prodName(pid)} a ${money(vg.precio)}`);
+      items.push({pid, vg, cant, precio:l.precio!==''?(Number(l.precio)||0):(vg.precio||0)});
+    }
+    if(!items.length) return toast('Elegí al menos un sabor');
     let cid;
     if(S.ventaClienteNuevo){ const nombre=document.getElementById('v-cli-nuevo').value.trim(); if(!nombre) return toast('Escribí el nombre del cliente');
       const ex=Object.values(S.clients).find(c=>c.nombre.toLowerCase()===nombre.toLowerCase());
       if(ex) cid=ex.id; else { try{ const ref=await S.db.collection('clientes').add({nombre, contacto:'', creado:Date.now(), creadoPor:S.me}); cid=ref.id; }catch(err){ return toast(writeErr(err)); } }
     } else { cid=document.getElementById('v-cli').value; if(!cid||cid==='__new') return toast('Elegí un cliente'); }
     const btn=fv.querySelector('button[type=submit]'); btn.disabled=true;
-    await save(()=>S.db.collection('ventas').add({fecha, clienteId:cid, productoId:pid, cantidad:cant, precioUnit:precio, costoUnit:vg.costo, loteId:lote.id, medio, vendedor:S.me, creado:Date.now()}), `Venta guardada: ${cant} × ${prodName(pid)}`);
-    S.ventaClienteNuevo=false; render();
+    const now=Date.now(); const pedidoId = items.length>1 ? S.db.collection('ventas').doc().id : null;
+    const units=items.reduce((a,x)=>a+x.cant,0);
+    let ok=false;
+    await save(async()=>{ const b=S.db.batch();
+      items.forEach((x,k)=>{ const lote=x.vg.lots.find(l=>l.restante>0)||x.vg.lots[0];
+        const d={fecha, clienteId:cid, productoId:x.pid, cantidad:x.cant, precioUnit:x.precio, costoUnit:x.vg.costo, loteId:lote.id, medio, vendedor:S.me, creado:now+k};
+        if(pedidoId) d.pedidoId=pedidoId; b.set(S.db.collection('ventas').doc(), d); });
+      await b.commit(); ok=true; },
+      items.length>1 ? `Venta guardada: ${items.length} sabores, ${units} u. para ${clientName(cid)}` : `Venta guardada: ${items[0].cant} × ${prodName(items[0].pid)}`);
+    if(ok){ S.ventaClienteNuevo=false; S.vLines=[newLine()]; S.vf={fecha, medio}; }
+    render();
   };
 
   const fp=document.getElementById('f-prod');
@@ -484,11 +526,6 @@ function bindApp(){
     catch(err){ toast(authErrMsg(err)); }
   };
 }
-function keepVentaForm(fn){
-  const keep={}; ['v-fecha','v-prod','v-cant','v-precio','v-medio'].forEach(id=>{const el=document.getElementById(id); if(el) keep[id]=el.value;});
-  fn(); Object.entries(keep).forEach(([id,v])=>{const el=document.getElementById(id); if(el) el.value=v;});
-}
-
 // ---------- boot ----------
 let rTimer=null; const scheduleRender=()=>{ if(rTimer) return; rTimer=requestAnimationFrame(()=>{ rTimer=null;
   // don't wipe a form someone is typing in

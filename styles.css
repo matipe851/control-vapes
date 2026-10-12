@@ -91,3 +91,17 @@ tr:last-child td{border-bottom:0}
 .matrix td.z{color:var(--line)}
 .split{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 @media (prefers-reduced-motion: no-preference){.bar i,.mcol .stick i{transition:width .4s, height .4s}}
+.vlines{display:grid;gap:8px;margin-top:14px}
+.vline{display:grid;grid-template-columns:minmax(0,2.4fr) 80px 120px 110px 76px;gap:8px;align-items:center}
+.vline.vhead{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.vline .r{text-align:right}
+.vfoot{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-top:14px}
+.vtotal{margin-left:auto;font-size:15px}
+.vtotal b{font-size:18px}
+@media (max-width:640px){
+  .vline{grid-template-columns:64px minmax(0,1fr) auto auto;padding-bottom:10px;border-bottom:1px solid var(--line)}
+  .vline>select{grid-column:1/-1}
+  .vline.vhead{display:none}
+  .vline>span.r{grid-column:auto}
+  .vtotal{margin-left:0;width:100%}
+}
