@@ -309,7 +309,7 @@ function viewClientes(){
   </form></section>
   <section class="panel"><div class="panel-head"><h2>Clientes</h2><span class="sub">Frecuencia = promedio de días entre compras</span></div>
   ${cs.length?`<div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Contacto</th><th class="r">Compras</th><th class="r">Unid.</th><th class="r">Gastó</th><th>Sabor favorito</th><th>Última</th><th class="r">Cada</th><th>Próxima</th><th>Estado</th>${admin?'<th></th>':''}</tr></thead><tbody>
-  ${cs.map(o=>`<tr><td><b>${esc(o.c.nombre)}</b></td><td class="sub">${esc(o.c.contacto||'')}</td><td class="r num">${o.compras}</td><td class="r num">${o.unidades}</td><td class="r num">${money(o.gasto)}</td><td>${esc(o.fav)}</td><td class="num">${fmtDate(o.ultima)}</td><td class="r num">${o.freq!=null?Math.round(o.freq)+' d':'—'}</td><td class="num">${fmtDate(o.proxima)}</td><td><span class="pill ${o.estado[1]}">${o.estado[0]}</span></td>${admin?`<td class="r">${delBtn('clientes',o.c.id)}</td>`:''}</tr>`).join('')}
+  ${cs.map(o=>{const ed=admin&&S.editCli===o.c.id; return `<tr><td>${ed?`<input id="ec-nombre" maxlength="50" value="${esc(o.c.nombre)}" style="width:140px" aria-label="Nombre">`:`<b>${esc(o.c.nombre)}</b>`}</td><td class="sub">${ed?`<input id="ec-contacto" maxlength="60" value="${esc(o.c.contacto||'')}" style="width:140px" placeholder="Teléfono / Instagram" aria-label="Contacto">`:esc(o.c.contacto||'')}</td><td class="r num">${o.compras}</td><td class="r num">${o.unidades}</td><td class="r num">${money(o.gasto)}</td><td>${esc(o.fav)}</td><td class="num">${fmtDate(o.ultima)}</td><td class="r num">${o.freq!=null?Math.round(o.freq)+' d':'—'}</td><td class="num">${fmtDate(o.proxima)}</td><td><span class="pill ${o.estado[1]}">${o.estado[0]}</span></td>${admin?`<td class="r"><span class="split" style="justify-content:flex-end;flex-wrap:nowrap">${ed?`<button class="btn sm" data-cli-save="${o.c.id}">Guardar</button><button class="btn ghost sm" data-cli-cancel>Cancelar</button>`:`<button class="btn ghost sm" data-cli-edit="${o.c.id}">Editar</button>${delBtn('clientes',o.c.id)}`}</span></td>`:''}</tr>`}).join('')}
   </tbody></table></div>`:`<p class="empty">Sin clientes todavía. También se crean solos al cargar una venta con "+ Cliente nuevo".</p>`}
   </section>`;
 }
@@ -423,7 +423,7 @@ async function save(fn, ok){ try{ await fn(); if(ok) toast(ok); } catch(err){ co
 
 function bindApp(){
   bindLogout();
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ S.tab=b.dataset.tab; S.confirm=null; ssSet('cv_tab',S.tab); render(); window.scrollTo(0,0); });
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ S.tab=b.dataset.tab; S.confirm=null; S.editCli=null; ssSet('cv_tab',S.tab); render(); window.scrollTo(0,0); });
   const per=document.getElementById('period'); if(per) per.onchange=()=>{ S.period=per.value; ssSet('cv_period',S.period); render(); };
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ S.confirm=b.dataset.del; render(); });
   document.querySelectorAll('[data-del-no]').forEach(b=>b.onclick=()=>{ S.confirm=null; render(); });
@@ -484,6 +484,16 @@ function bindApp(){
     save(()=>S.db.collection('productos').add({sabor, modelo:v('p-modelo').trim(), puffs:Number(v('p-puffs'))||0, costo:Number(v('p-costo'))||0, precio:Number(v('p-precio'))||0, stockInicial:Number(v('p-stock'))||0, stockMin:Number(v('p-min'))||0, creado:Date.now()}), 'Sabor agregado'); };
   document.querySelectorAll('[data-edit]').forEach(inp=>inp.onchange=()=>{ const id=inp.dataset.edit, f=inp.dataset.f; const val=Number(inp.value)||0;
     if((Number(S.prods[id]?.[f])||0)===val) return; save(()=>S.db.doc('productos/'+id).update({[f]:val}), f==='costo'?'Costo actualizado':'Precio actualizado'); });
+
+  document.querySelectorAll('[data-cli-edit]').forEach(b=>b.onclick=()=>{ S.editCli=b.dataset.cliEdit; S.confirm=null; render(); document.getElementById('ec-nombre')?.focus(); });
+  document.querySelectorAll('[data-cli-cancel]').forEach(b=>b.onclick=()=>{ S.editCli=null; render(); });
+  const saveCli=async id=>{ const nombre=document.getElementById('ec-nombre').value.trim(); const contacto=document.getElementById('ec-contacto').value.trim();
+    if(!nombre) return toast('El nombre no puede quedar vacío');
+    if(Object.values(S.clients).some(c=>c.id!==id && c.nombre.toLowerCase()===nombre.toLowerCase())) return toast('Ya existe un cliente con ese nombre');
+    const c=S.clients[id]; if(c && c.nombre===nombre && (c.contacto||'')===contacto){ S.editCli=null; return render(); }
+    S.editCli=null; document.activeElement?.blur(); await save(()=>S.db.doc('clientes/'+id).update({nombre, contacto, editado:Date.now(), editadoPor:S.me}), 'Cliente actualizado'); render(); };
+  document.querySelectorAll('[data-cli-save]').forEach(b=>b.onclick=()=>saveCli(b.dataset.cliSave));
+  ['ec-nombre','ec-contacto'].forEach(id=>{ const el=document.getElementById(id); if(el) el.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); saveCli(S.editCli); } else if(e.key==='Escape'){ S.editCli=null; render(); } }; });
 
   const fc=document.getElementById('f-cli');
   if(fc) fc.onsubmit=e=>{ e.preventDefault(); const nombre=document.getElementById('c-nombre').value.trim(); if(!nombre) return;
