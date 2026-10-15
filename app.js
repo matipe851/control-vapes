@@ -216,8 +216,11 @@ function inPeriod(fecha){
   return true;
 }
 const lineTotal = l => (parseInt(l.cant,10)||0)*(Number(l.precio)||0);
-const ventaTotal = v => (Number(v.cantidad)||0)*(Number(v.precioUnit)||0);
-const ventaGanancia = v => (Number(v.cantidad)||0)*((Number(v.precioUnit)||0)-(Number(v.costoUnit)||0));
+const ventaBruto = v => (Number(v.cantidad)||0)*(Number(v.precioUnit)||0);
+const ventaTotal = v => Math.max(0, ventaBruto(v) - (Number(v.descuento)||0));
+const ventaGanancia = v => ventaTotal(v) - (Number(v.cantidad)||0)*(Number(v.costoUnit)||0);
+// descuento del formulario de venta: monto fijo ($) o porcentaje (%) sobre el subtotal
+const descDe = sub => { const n=Number(S.vf.desc)||0; if(n<=0||sub<=0) return 0; return Math.min(sub, Math.round(S.vf.descTipo==='%'? sub*Math.min(n,100)/100 : n)); };
 const sortedVentas = () => Object.values(S.ventas).sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||'') || (b.creado||0)-(a.creado||0));
 
 function clientStats(){
@@ -371,7 +374,7 @@ function viewResumen(){
   return `
   <div class="panel-head"><div><h2 style="font-size:22px;font-weight:800">Resumen</h2><span class="sub">Se actualiza solo con cada venta que carga cualquier usuario.</span></div>${periodSelect()}</div>
   <section class="kpis">
-    <div class="kpi"><span class="l">Facturación</span><span class="v num">${money(total)}</span><span class="h">${ops} venta${ops===1?'':'s'}</span></div>
+    <div class="kpi"><span class="l">Facturación</span><span class="v num">${money(total)}</span><span class="h">${ops} venta${ops===1?'':'s'}${(()=>{const d=vs.reduce((a,v)=>a+(Number(v.descuento)||0),0); return d?` · ${money(d)} en descuentos`:'';})()}</span></div>
     <div class="kpi"><span class="l">Unidades vendidas</span><span class="v num">${n0.format(unid)}</span><span class="h">Ticket prom. ${money(ops?total/ops:0)}</span></div>
     <div class="kpi"><span class="l">Ganancia</span><span class="v num">${money(gan)}</span><span class="h">${sinCosto?'Faltan costos en algunos sabores':(total?`Margen ${Math.round(gan/total*100)}%`:'—')}</span></div>
     <div class="kpi"><span class="l">Clientes que compraron</span><span class="v num">${clientesPer}</span><span class="h">${Object.keys(S.clients).length} en total</span></div>
@@ -417,6 +420,7 @@ function viewVentas(){
       ? `<input id="v-cli-nuevo" placeholder="Nombre del cliente nuevo" required maxlength="50" value="${esc(S.vf.cliNuevo||'')}">`
       : `<select id="v-cli" required><option value="">Elegí…</option>${clients.map(c=>`<option value="${c.id}" ${S.vf.cli===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}<option value="__new">+ Cliente nuevo</option></select>`}</label>
     <label>Medio de pago<select id="v-medio">${MEDIOS.map(m=>`<option ${S.vf.medio===m?'selected':''}>${m}</option>`).join('')}</select></label>
+    <label>Descuento <span style="display:flex;gap:6px"><input id="v-desc" type="number" min="0" step="1" placeholder="0" value="${esc(S.vf.desc||'')}" aria-label="Descuento"><select id="v-desc-tipo" style="width:auto" aria-label="Tipo de descuento"><option value="$" ${S.vf.descTipo!=='%'?'selected':''}>$</option><option value="%" ${S.vf.descTipo==='%'?'selected':''}>%</option></select></span></label>
     </div>
     <div class="vlines">
       <div class="vline vhead"><span>Sabor</span><span>Cant.</span><span>Precio u.</span><span class="r">Subtotal</span><span></span></div>
@@ -430,13 +434,14 @@ function viewVentas(){
     </div>
     <div class="vfoot">
       <button type="button" class="btn ghost" id="vl-add" ${prods.length?'':'disabled'}>+ Agregar otro sabor</button>
-      <span class="vtotal">Total <b class="num" id="vl-total">${money(lines.reduce((a,l)=>a+lineTotal(l),0))}</b> <span class="sub" id="vl-units">${lines.reduce((a,l)=>a+(parseInt(l.cant,10)||0),0)} u.</span></span>
+      ${(()=>{const sub=lines.reduce((a,l)=>a+lineTotal(l),0); const d=descDe(sub); return `<span class="sub" id="vl-desc-txt">${d?`Subtotal ${money(sub)} · Descuento −${money(d)}`:''}</span>`;})()}
+      <span class="vtotal">Total <b class="num" id="vl-total">${money((()=>{const sub=lines.reduce((a,l)=>a+lineTotal(l),0); return sub-descDe(sub);})())}</b> <span class="sub" id="vl-units">${lines.reduce((a,l)=>a+(parseInt(l.cant,10)||0),0)} u.</span></span>
       <button class="btn" type="submit" ${prods.length?'':'disabled'}>Guardar venta</button>
     </div>
   </form></section>
   <section class="panel"><div class="panel-head"><div><h2>Ventas</h2><span class="sub num">${list.length} ventas · ${money(tot)}</span></div>${periodSelect()}</div>
   ${list.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Sabor</th><th class="r">Cant.</th><th class="r">Precio u.</th><th class="r">Total</th><th>Pago</th><th>Vendedor</th><th></th></tr></thead><tbody>
-  ${list.map(v=>`<tr><td class="num">${fmtDate(v.fecha)}</td><td>${esc(clientName(v.clienteId))}</td><td>${esc(prodName(v.productoId))}</td><td class="r num">${v.cantidad}</td><td class="r num">${money(v.precioUnit)}</td><td class="r num">${money(ventaTotal(v))}</td><td>${esFiado(v)?'<span class="pill bad">Debe</span>':esc(v.medio||'')+(v.cobrado?' <span class="sub">(fiado, cobrado '+fmtDate(v.cobrado)+')</span>':'')}</td><td>${esc(userName(v.vendedor))}</td>
+  ${list.map(v=>`<tr><td class="num">${fmtDate(v.fecha)}</td><td>${esc(clientName(v.clienteId))}</td><td>${esc(prodName(v.productoId))}</td><td class="r num">${v.cantidad}</td><td class="r num">${money(v.precioUnit)}</td><td class="r num">${money(ventaTotal(v))}${Number(v.descuento)?`<br><span class="sub" title="Precio de lista ${money(ventaBruto(v))}">−${money(v.descuento)} desc.</span>`:''}</td><td>${esFiado(v)?'<span class="pill bad">Debe</span>':esc(v.medio||'')+(v.cobrado?' <span class="sub">(fiado, cobrado '+fmtDate(v.cobrado)+')</span>':'')}</td><td>${esc(userName(v.vendedor))}</td>
   <td class="r">${(admin||v.vendedor===S.me)? delBtn('ventas',v.id) : ''}</td></tr>`).join('')}</tbody></table></div>`:`<p class="empty">No hay ventas en este período. Cargá la primera arriba.</p>`}
   </section>`;
 }
@@ -637,8 +642,12 @@ function bindApp(){
   const vcn=document.getElementById('v-cli-nuevo'); if(vcn) vcn.oninput=()=>S.vf.cliNuevo=vcn.value;
   const vfe=document.getElementById('v-fecha'); if(vfe) vfe.onchange=()=>S.vf.fecha=vfe.value;
   const vme=document.getElementById('v-medio'); if(vme) vme.onchange=()=>S.vf.medio=vme.value;
+  const vde=document.getElementById('v-desc'); if(vde) vde.oninput=()=>{ S.vf.desc=vde.value; refreshTotals(); };
+  const vdt=document.getElementById('v-desc-tipo'); if(vdt) vdt.onchange=()=>{ S.vf.descTipo=vdt.value; refreshTotals(); };
   const refreshTotals=()=>{ S.vLines.forEach((l,i)=>{ const el=document.getElementById('vl-sub-'+i); if(el) el.textContent=money(lineTotal(l)); });
-    const t=document.getElementById('vl-total'); if(t) t.textContent=money(S.vLines.reduce((a,l)=>a+lineTotal(l),0));
+    const sub=S.vLines.reduce((a,l)=>a+lineTotal(l),0); const dd=descDe(sub);
+    const t=document.getElementById('vl-total'); if(t) t.textContent=money(sub-dd);
+    const dt=document.getElementById('vl-desc-txt'); if(dt) dt.textContent = dd?`Subtotal ${money(sub)} · Descuento −${money(dd)}`:'';
     const u=document.getElementById('vl-units'); if(u) u.textContent=S.vLines.reduce((a,l)=>a+(parseInt(l.cant,10)||0),0)+' u.'; };
   document.querySelectorAll('[data-vl]').forEach(el=>{ const i=+el.dataset.vl, f=el.dataset.vf;
     if(f==='prod') el.onchange=()=>{ const l=S.vLines[i]; l.prod=el.value; const [pid,key]=el.value.split('::'); const g=variantsOf(pid).find(x=>x.key===key);
@@ -669,13 +678,17 @@ function bindApp(){
     const btn=fv.querySelector('button[type=submit]'); btn.disabled=true;
     const now=Date.now(); const pedidoId = items.length>1 ? S.db.collection('ventas').doc().id : null;
     const units=items.reduce((a,x)=>a+x.cant,0);
+    const subT=items.reduce((a,x)=>a+x.cant*x.precio,0); const descT=descDe(subT);
+    // reparte el descuento entre los sabores, proporcional a cada subtotal
+    let resto=descT; items.forEach((x,k)=>{ const part = k===items.length-1 ? resto : Math.round(descT*(x.cant*x.precio)/(subT||1)); x.desc=Math.min(part, x.cant*x.precio); resto-=x.desc; });
     let ok=false;
     await save(async()=>{ const b=S.db.batch();
       items.forEach((x,k)=>{ const lote=x.vg.lots.find(l=>l.restante>0)||x.vg.lots[0];
         const d={fecha, clienteId:cid, productoId:x.pid, cantidad:x.cant, precioUnit:x.precio, costoUnit:x.vg.costo, loteId:lote.id, medio, vendedor:S.me, creado:now+k};
+        if(x.desc>0) d.descuento=x.desc;
         if(pedidoId) d.pedidoId=pedidoId; b.set(S.db.collection('ventas').doc(), d); });
       await b.commit(); ok=true; },
-      items.length>1 ? `Venta guardada: ${items.length} sabores, ${units} u. para ${clientName(cid)}` : `Venta guardada: ${items[0].cant} × ${prodName(items[0].pid)}`);
+      (items.length>1 ? `Venta guardada: ${items.length} sabores, ${units} u. para ${clientName(cid)}` : `Venta guardada: ${items[0].cant} × ${prodName(items[0].pid)}`) + (descT?` (descuento ${money(descT)})`:''));
     if(ok){ S.ventaClienteNuevo=false; S.vLines=[newLine()]; S.vf={fecha, medio}; }
     render();
   };
