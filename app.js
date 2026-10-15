@@ -1,7 +1,7 @@
 
 (() => {
 const $app = document.getElementById('app');
-const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{} };
+const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{}, bulkSel:null, bulk:null };
 const newLine = () => ({prod:'', cant:'1', precio:''});
 const MEDIOS = ['Efectivo','Transferencia','Mercado Pago'];
 const ars = new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0});
@@ -63,7 +63,7 @@ const userName = u => S.users[u]?.nombre || S.users[u]?.usuario || '(usuario bor
 const MSG_HEADER = 'ELF BAR ICE KING 40K PUFF';
 // keyword → emoji (español e inglés). Se buscan en el nombre del sabor, en el orden en que aparecen.
 const FRUTAS = [
-  [/(water ?melon|sand[ií]a)/,'🍉'], [/(straw ?berr|frutilla|fresa)/,'🍓'], [/(blue ?berr|ar[aá]ndano|mixed berr|\bberr|blue razz|\brazz)/,'🫐'],
+  [/(water ?melon|sand[ií]a)/,'🍉'], [/(straw ?berr|\bstraw\b|frutilla|fresa)/,'🍓'], [/(blue ?berr|ar[aá]ndano|mixed berr|\bberr|cranberr|blue razz|\brazz)/,'🫐'],
   [/(grape|\buva)/,'🍇'], [/mango/,'🥭'], [/(banana|pl[aá]tano)/,'🍌'], [/(cherry|cereza)/,'🍒'], [/(peach|durazno|melocot)/,'🍑'],
   [/(pine ?apple|anan[aá]|pi[ñn]a\b)/,'🍍'], [/(\bapple|manzana)/,'🍏'], [/(lemon|lim[oó]n|\blime|\blima\b)/,'🍋'],
   [/(orange|naranja|mandarin)/,'🍊'], [/kiwi/,'🥝'], [/(coconut|\bcoco\b)/,'🥥'], [/(\bmelon|\bmel[oó]n)/,'🍈'], [/(\bpear|\bpera\b)/,'🍐'],
@@ -98,6 +98,32 @@ function waNumber(raw){
   return '549'+d;
 }
 const WA_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.6.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.3.8 3.2.7a2.7 2.7 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.2-.2-.5-.3Z"/></svg>';
+const conTel = () => Object.values(S.clients).filter(c=>waNumber(c.contacto)).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+const paraContactarIds = () => Object.values(clientStats()).filter(o=>(o.estado[0]==='Contactar'||o.estado[0]==='Inactivo') && waNumber(o.c.contacto)).map(o=>o.c.id);
+function waHref(c){ return `https://api.whatsapp.com/send?phone=${waNumber(c.contacto)}&text=${encodeURIComponent(mensajeStock())}`; }
+function startBulk(ids){ const q=ids.filter(id=>S.clients[id] && waNumber(S.clients[id].contacto)); if(!q.length) return toast('No hay clientes con teléfono para enviar'); S.bulk={ids:q, i:0}; S.tab='clientes'; ssSet('cv_tab','clientes'); render(); document.getElementById('bulk')?.scrollIntoView({block:'start'}); }
+function viewBulk(){
+  const list=conTel();
+  if(S.bulk){
+    const {ids,i}=S.bulk; const done=i>=ids.length; const c=done?null:S.clients[ids[i]];
+    return `<section class="panel" id="bulk"><div class="panel-head"><h2>Envío masivo</h2><span class="sub num">${Math.min(i,ids.length)} de ${ids.length} abiertos</span></div>
+      <div class="bar"><i style="width:${(Math.min(i,ids.length)/ids.length*100).toFixed(1)}%"></i></div>
+      ${done?`<p class="note">Listo, abriste los ${ids.length} chats.</p><div class="split"><button class="btn" data-bulk-end>Terminar</button></div>`
+      :`<p class="sub">WhatsApp no deja mandar a varios de una sola vez desde una página: tocá el botón, mandá el mensaje en WhatsApp y volvé acá para el siguiente.</p>
+      <div class="split"><a class="wa" style="padding:10px 16px;font-size:15px" href="${esc(waHref(c))}" target="_blank" rel="noopener" data-bulk-next>${WA_ICON}Abrir chat de ${esc(c.nombre)} (${i+1}/${ids.length})</a>
+      <button class="btn ghost sm" data-bulk-skip>Saltear</button><button class="btn ghost sm" data-bulk-end>Cancelar</button></div>
+      <p class="sub">Siguen: ${ids.slice(i+1).map(id=>esc(S.clients[id]?.nombre||'')).join(', ')||'—'}</p>`}
+    </section>`;
+  }
+  const sel=S.bulkSel||new Set();
+  return `<section class="panel" id="bulk"><div class="panel-head"><div><h2>Envío masivo</h2><span class="sub">Elegí a quiénes mandarles la lista de sabores en stock</span></div>
+    <div class="split"><button class="btn ghost sm" data-bulk-all>Todos (${list.length})</button><button class="btn ghost sm" data-bulk-pc>Para contactar (${paraContactarIds().length})</button><button class="btn ghost sm" data-bulk-none>Ninguno</button></div></div>
+    ${list.length?`<div class="split">${list.map(c=>`<label style="display:inline-flex;flex-direction:row;align-items:center;gap:6px;color:var(--fg);font-size:14px;background:var(--surface-2);padding:5px 10px;border-radius:8px;cursor:pointer"><input type="checkbox" style="width:auto" data-bulk-c="${c.id}" ${sel.has(c.id)?'checked':''}>${esc(c.nombre)}</label>`).join('')}</div>
+    <div class="split"><button class="btn" data-bulk-go ${sel.size?'':'disabled'}>Empezar envío (${sel.size})</button><button class="btn ghost" data-bulk-copy>Copiar mensaje</button></div>
+    <p class="sub">"Copiar mensaje" sirve para pegarlo en una lista de difusión o en un estado de WhatsApp.</p>`
+    :`<p class="empty">Ningún cliente tiene teléfono cargado todavía. Cargalo con "Editar" en la tabla de abajo.</p>`}
+  </section>`;
+}
 function waBtn(c){
   const num=waNumber(c?.contacto); if(!num) return '';
   const href=`https://api.whatsapp.com/send?phone=${num}&text=${encodeURIComponent(mensajeStock())}`;
@@ -262,8 +288,8 @@ function viewResumen(){
     <section class="panel"><div class="panel-head"><h2>Ventas por vendedor</h2><span class="sub">facturación</span></div>${barList(rankVend, money, 'ice')}</section>
     <section class="panel"><div class="panel-head"><h2>Medio de pago</h2><span class="sub">facturación</span></div>${barList(rankMedio, money, 'ice')}</section>
     <section class="panel"><div class="panel-head"><h2>Top 10 clientes</h2><span class="sub">unidades en el período</span></div>${barList(topCli, n0.format)}</section>
-    <section class="panel"><div class="panel-head"><h2>Para contactar</h2><span class="sub">pasaron su frecuencia habitual</span></div>
-      ${cs.length?`<div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Última</th><th class="r">Días</th><th>Estado</th><th></th></tr></thead><tbody>${cs.map(o=>`<tr><td>${esc(o.c.nombre)}</td><td class="num">${fmtDate(o.ultima)}</td><td class="r num">${o.desde}</td><td><span class="pill ${o.estado[1]}">${o.estado[0]}</span></td><td class="r">${waBtn(o.c)}</td></tr>`).join('')}</tbody></table></div>`:`<p class="empty">Nadie atrasado por ahora.</p>`}</section>
+    <section class="panel"><div class="panel-head"><div><h2>Para contactar</h2><span class="sub">pasaron su frecuencia habitual</span></div>${paraContactarIds().length?`<button class="btn sm" data-bulk-pc-go>${WA_ICON.replace('<svg','<svg style="width:14px;height:14px;fill:currentColor;vertical-align:-2px"')} Enviar a todos (${paraContactarIds().length})</button>`:''}</div>
+      ${cs.length?`<div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Última</th><th class="r">Días</th><th>Estado</th><th></th></tr></thead><tbody>${cs.map(o=>`<tr><td>${esc(o.c.nombre)}</td><td class="num">${fmtDate(o.ultima)}</td><td class="r num">${o.desde}</td><td><span class="pill ${o.estado[1]}">${o.estado[0]}</span></td><td class="r">${waBtn(o.c)||(S.users[S.me]?.rol==='admin'?`<button class="btn ghost sm" data-cli-goedit="${o.c.id}">Cargar teléfono</button>`:'<span class="sub">Sin teléfono</span>')}</td></tr>`).join('')}</tbody></table></div>`:`<p class="empty">Nadie atrasado por ahora.</p>`}</section>
   </div>
   ${low.length?`<section class="panel"><div class="panel-head"><h2>Reponer</h2></div><div class="split">${low.map(o=>`<span class="pill ${o.s<=0?'bad':'warn'}">${esc(o.p.sabor)} · ${o.s}</span>`).join('')}</div></section>`:''}`;
 }
@@ -355,6 +381,7 @@ function viewClientes(){
     <label>Teléfono (WhatsApp) / Instagram<input id="c-contacto" maxlength="60" placeholder="11 2345-6789"></label>
     <button class="btn" type="submit">Agregar cliente</button>
   </form></section>
+  ${viewBulk()}
   <section class="panel">
     <details id="msg-det"><summary>Mensaje de WhatsApp que se envía</summary>
       <p class="sub" style="margin:8px 0">Se arma solo con los sabores que tienen stock en este momento.</p>
@@ -477,6 +504,18 @@ async function save(fn, ok){ try{ await fn(); if(ok) toast(ok); } catch(err){ co
 
 function bindApp(){
   bindLogout();
+  const q=(sel,fn)=>document.querySelectorAll(sel).forEach(fn);
+  q('[data-bulk-c]',cb=>cb.onchange=()=>{ S.bulkSel=S.bulkSel||new Set(); cb.checked?S.bulkSel.add(cb.dataset.bulkC):S.bulkSel.delete(cb.dataset.bulkC); render(); });
+  q('[data-bulk-all]',b=>b.onclick=()=>{ S.bulkSel=new Set(conTel().map(c=>c.id)); render(); });
+  q('[data-bulk-pc]',b=>b.onclick=()=>{ S.bulkSel=new Set(paraContactarIds()); render(); });
+  q('[data-bulk-none]',b=>b.onclick=()=>{ S.bulkSel=new Set(); render(); });
+  q('[data-bulk-go]',b=>b.onclick=()=>startBulk([...(S.bulkSel||[])]));
+  q('[data-bulk-pc-go]',b=>b.onclick=()=>startBulk(paraContactarIds()));
+  q('[data-bulk-next]',a=>a.onclick=()=>{ setTimeout(()=>{ if(S.bulk){ S.bulk.i++; render(); } },400); });
+  q('[data-bulk-skip]',b=>b.onclick=()=>{ S.bulk.i++; render(); });
+  q('[data-bulk-end]',b=>b.onclick=()=>{ S.bulk=null; S.bulkSel=null; render(); });
+  q('[data-bulk-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(mensajeStock()); toast('Mensaje copiado'); }catch(e){ toast('No se pudo copiar'); } });
+  q('[data-cli-goedit]',b=>b.onclick=()=>{ S.tab='clientes'; ssSet('cv_tab','clientes'); S.editCli=b.dataset.cliGoedit; render(); document.getElementById('ec-contacto')?.focus(); });
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ S.tab=b.dataset.tab; S.confirm=null; S.editCli=null; ssSet('cv_tab',S.tab); render(); window.scrollTo(0,0); });
   const per=document.getElementById('period'); if(per) per.onchange=()=>{ S.period=per.value; ssSet('cv_period',S.period); render(); };
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ S.confirm=b.dataset.del; render(); });
