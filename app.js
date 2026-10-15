@@ -599,6 +599,21 @@ function asesor(){
     return {p, st, v30, dias, precio, costoHist, costoRepo, ultUsd, margenHoy, sug, dif, accion, motivo, veredicto, margenSug: sug? (sug-costoRepo)/sug : null};
   }).sort((a,b)=>Math.abs(b.dif)-Math.abs(a.dif) || b.v30-a.v30);
 
+  // precio único (todos los sabores valen lo mismo)
+  const conStock=rows.filter(r=>r.st>0);
+  const precios=conStock.map(r=>r.precio).filter(Boolean); const cnt={}; precios.forEach(x=>cnt[x]=(cnt[x]||0)+1);
+  const precioActual = Number(Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0]?.[0]) || Number(Object.values(S.prods)[0]?.precio)||0;
+  const costoGlobal = (usdProm && blue) ? Math.round(usdProm*blue) : (conStock.length ? Math.round(conStock.reduce((a,r)=>a+(r.costoHist||0)*r.st,0)/Math.max(1,conStock.reduce((a,r)=>a+r.st,0))) : 0);
+  const precioObjetivo = costoGlobal ? costoGlobal/(1-cfg.margen/100) : 0;
+  let precioSug = precioObjetivo ? redondear(precioObjetivo, cfg.redondeo) : 0;
+  const margenActual = precioActual&&costoGlobal ? (precioActual-costoGlobal)/precioActual : null;
+  const margenSug = precioSug&&costoGlobal ? (precioSug-costoGlobal)/precioSug : null;
+  const margenRef = cfg.ref&&costoGlobal ? (cfg.ref-costoGlobal)/cfg.ref : null;
+  const difPrecio = precioActual&&precioSug ? (precioSug-precioActual)/precioActual : 0;
+  const unid30 = rows.reduce((a,r)=>a+r.v30,0);
+  const lentos = rows.filter(r=>r.accion==='Promo');
+  const combo = precioActual ? redondear(precioActual*2*0.92, cfg.redondeo) : 0;
+  const comboMargen = combo&&costoGlobal ? (combo-2*costoGlobal)/combo : null;
   // números del mes
   const fact=vs30.reduce((a,v)=>a+ventaTotal(v),0), gan=vs30.reduce((a,v)=>a+ventaGanancia(v),0);
   const desc=vs30.reduce((a,v)=>a+(Number(v.descuento)||0),0);
@@ -610,26 +625,29 @@ function asesor(){
 
   // consejos
   const tips=[];
-  if(blue && ultTc && blue>ultTc*1.01){ const sub=(blue-ultTc)/ultTc; tips.push(['bad',`El dólar blue subió ${pct(sub)} desde tu última compra (${money(ultTc)} → ${money(blue)}). Reponer te sale más caro: revisá los precios marcados "Subir".`]); }
+  if(blue && ultTc && blue>ultTc*1.01){ const sub=(blue-ultTc)/ultTc; tips.push(['bad',`El dólar blue subió ${pct(sub)} desde tu última compra (${money(ultTc)} → ${money(blue)}). Reponer te sale más caro: revisá el precio de venta.`]); }
   if(blue && ultTc && blue<ultTc*0.99) tips.push(['ok',`El dólar bajó desde tu última compra (${money(ultTc)} → ${money(blue)}). Buen momento para reponer.`]);
-  const bajos=rows.filter(r=>r.veredicto[0]==='Margen muy bajo'); if(bajos.length) tips.push(['bad',`${bajos.map(r=>r.p.sabor).join(', ')}: al costo de reposición de hoy ganás menos del 15%. Subí el precio o dejá de comprarlo.`]);
-  const subir=rows.filter(r=>r.veredicto[0]==='Subir'); if(subir.length) tips.push(['warn',`Podrías subir ${subir.length} sabor${subir.length>1?'es':''} y ganar ≈${money(subir.reduce((a,r)=>a+(r.sug-r.precio)*Math.max(r.v30,1),0))} más por mes con la misma venta.`]);
-  if(parado>0) tips.push(['warn',`Tenés ${money(parado)} (a costo) en sabores que casi no se venden. Liquidalos con promo antes de comprar más.`]);
+  if(margenActual!=null && margenActual<0.15) tips.push(['bad',`Con el costo de reponer hoy (${money(costoGlobal)}) y tu precio de ${money(precioActual)}, ganás solo ${pct(margenActual)} por vape. Tenés que subir el precio.`]);
+  else if(difPrecio>0.03) tips.push(['warn',`Para llegar a tu margen del ${cfg.margen}% el precio debería ser ${money(precioSug)} (hoy ${money(precioActual)}). Con tus ventas del mes (${unid30} u.) serían ≈${money((precioSug-precioActual)*unid30)} más de ganancia por mes.`]);
+  else if(difPrecio<-0.03) tips.push(['ok',`Tu precio (${money(precioActual)}) deja más margen que tu objetivo. Si querés vender más, podrías bajar a ${money(precioSug)} y seguir en ${cfg.margen}%.`]);
+  if(cfg.ref && precioSug>cfg.ref*1.03) tips.push(['warn',`El precio que necesitás (${money(precioSug)}) queda arriba de las tiendas online (${money(cfg.ref)}). Conviene negociar el costo con tu proveedor o aceptar un margen menor.`]);
+  if(parado>0 && lentos.length) tips.push(['warn',`Tenés ${money(parado)} (a costo) parados en ${lentos.map(r=>r.p.sabor).join(', ')}. Como no podés bajar el precio de un sabor solo, ofrecé un combo: 2 vapes por ${money(combo)} (uno tiene que ser de estos)${comboMargen!=null?`, sigue dejando ${pct(comboMargen)}`:''}. Y no compres más de esos hasta liquidarlos.`]);
   if(fact && desc/ (fact+desc) > 0.05) tips.push(['warn',`En 30 días diste ${money(desc)} en descuentos (${pct(desc/(fact+desc))} de lo que hubieras facturado). Ojo que se come el margen.`]);
   if(deudaVieja>0) tips.push(['bad',`Te deben ${money(deudaVieja)} hace más de 2 semanas. Cobrá antes de seguir fiando.`]); else if(deuda>0) tips.push(['mid',`Tenés ${money(deuda)} en fiado. Mandá recordatorio desde la pestaña Fiado.`]);
   if(sinCosto) tips.push(['mid',`${sinCosto} venta${sinCosto>1?'s':''} del mes no tienen costo cargado: la ganancia real puede ser menor a la que ves.`]);
   if(fact && gan/fact>0 && gan/fact < cfg.margen/100 - 0.05) tips.push(['warn',`Tu margen real del mes es ${pct(gan/fact)}, por debajo de tu objetivo de ${cfg.margen}%.`]);
   if(!tips.length) tips.push(['ok','Todo en orden: precios alineados con tu costo y tu margen objetivo.']);
-  return {cfg, blue, ultTc, usdProm, rows, fact, gan, desc, capital, capitalRepo, valorVenta, parado, deuda, tips};
+  return {cfg, blue, ultTc, usdProm, rows, precioActual, costoGlobal, precioSug, margenActual, margenSug, margenRef, difPrecio, unid30, combo, comboMargen, lentos, fact, gan, desc, capital, capitalRepo, valorVenta, parado, deuda, tips};
 }
 function textoAsesor(a){
-  const L=[`Sos mi asesor financiero para un pequeño negocio de reventa de Elf Bar Ice King 40K en Buenos Aires. Pago la mercadería en dólares (blue). Analizá estos datos y decime qué precios poner, qué comprar, qué liquidar y cómo mejorar la ganancia. Sé concreto y con números.`,
+  const L=[`Sos mi asesor financiero para un pequeño negocio de reventa de Elf Bar Ice King 40K en Buenos Aires. Pago la mercadería en dólares (blue). Analizá estos datos y decime qué precio único poner, qué sabores comprar, cuáles liquidar (con combos, no bajando el precio de un sabor) y cómo mejorar la ganancia. Sé concreto y con números.`,
   ``,`Dólar blue promedio hoy: ${a.blue?money(a.blue):'s/d'} · última compra a: ${a.ultTc?money(a.ultTc):'s/d'} · costo promedio US$ ${a.usdProm?a.usdProm.toFixed(2):'s/d'}`,
   `Precio de referencia del mercado online: ${money(a.cfg.ref)} · margen objetivo ${a.cfg.margen}%`,
   `Últimos 30 días: facturación ${money(a.fact)}, ganancia ${money(a.gan)}, descuentos ${money(a.desc)}, fiado pendiente ${money(a.deuda)}`,
   `Stock: ${money(a.capital)} a costo, ${money(a.valorVenta)} a precio de venta`,``,
-  `Sabor | stock | vendidas 30d | precio | costo reposición hoy | margen hoy`,
-  ...a.rows.map(r=>`${r.p.sabor} | ${r.st} | ${r.v30} | ${money(r.precio)} | ${money(r.costoRepo)} | ${r.margenHoy!=null?pct(r.margenHoy):'s/d'}`)];
+  `Todos los sabores se venden al mismo precio: ${money(a.precioActual)}. Costo de reponer hoy: ${money(a.costoGlobal)}. No puedo poner precios distintos por sabor.`,``,
+  `Sabor | stock | vendidas 30d`,
+  ...a.rows.map(r=>`${r.p.sabor} | ${r.st} | ${r.v30}`)];
   return L.join('\n');
 }
 function viewAsesor(){
@@ -646,17 +664,22 @@ function viewAsesor(){
   <section class="panel"><h2>Lo que te recomiendo</h2>
     <div style="display:grid;gap:8px">${a.tips.map(([k,txt])=>`<div class="note" style="border-left:3px solid var(--${k==='mid'?'accent':k});color:var(--fg)">${esc(txt)}</div>`).join('')}</div>
   </section>
-  <section class="panel"><div class="panel-head"><div><h2>Precios sugeridos</h2><span class="sub">Precio = costo de reposición hoy (último costo en US$ × blue) + tu margen, ajustado por demanda</span></div>
-    ${a.rows.some(r=>r.veredicto[0]==='Subir'||r.veredicto[0]==='Bajar'||r.veredicto[0]==='Margen muy bajo')?`<button class="btn" data-ase-all>Aplicar todos los sugeridos</button>`:''}</div>
-    <div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th class="r">Stock</th><th class="r">Vend. 30d</th><th class="r">Costo hoy</th><th class="r">Precio actual</th><th class="r">Margen hoy</th><th class="r">Sugerido</th><th>Por qué</th><th></th></tr></thead><tbody>
-    ${a.rows.map(r=>`<tr><td><b>${esc(r.p.sabor)}</b><br><span class="pill ${r.veredicto[1]}">${r.veredicto[0]}</span></td><td class="r num">${r.st}</td><td class="r num">${r.v30}</td>
-      <td class="r num" style="white-space:nowrap">${r.costoRepo?money(r.costoRepo):'—'}${r.ultUsd?`<br><span class="sub">US$ ${(+r.ultUsd).toFixed(2)}</span>`:''}</td>
-      <td class="r num">${r.precio?money(r.precio):'—'}</td><td class="r num" style="color:${r.margenHoy!=null&&r.margenHoy<0.15?'var(--bad)':'inherit'}">${r.margenHoy!=null?pct(r.margenHoy):'—'}</td>
-      <td class="r num" style="white-space:nowrap"><b style="font-size:16px">${r.sug?money(r.sug):'—'}</b>${r.sug&&r.precio&&r.sug!==r.precio?`<br><span class="sub">${r.dif>0?'+':''}${pct(r.dif)} · margen ${pct(r.margenSug)}</span>`:''}</td>
-      <td class="sub" style="min-width:200px">${esc(r.motivo)}</td>
-      <td class="r">${r.sug&&r.sug!==r.precio&&r.st>0?`<button class="btn ghost sm" data-ase-apply="${r.p.id}" data-v="${r.sug}">Aplicar</button>`:''}</td></tr>`).join('')}
+  <section class="panel"><div class="panel-head"><div><h2>Precio de venta</h2><span class="sub">Un solo precio para todos los sabores, calculado con el costo de reponer hoy (US$ × blue) + tu margen objetivo</span></div></div>
+    <section class="kpis">
+      <div class="kpi"><span class="l">Precio actual</span><span class="v num">${a.precioActual?money(a.precioActual):'—'}</span><span class="h">${a.margenActual!=null?`margen hoy ${pct(a.margenActual)}`:'cargá costos'}</span></div>
+      <div class="kpi"><span class="l">Costo de reponer hoy</span><span class="v num">${a.costoGlobal?money(a.costoGlobal):'—'}</span><span class="h">${a.usdProm&&a.blue?`US$ ${a.usdProm.toFixed(2)} × ${money(a.blue)}`:'según costos en pesos'}</span></div>
+      <div class="kpi"><span class="l">Precio sugerido</span><span class="v num" style="color:var(--accent)">${a.precioSug?money(a.precioSug):'—'}</span><span class="h">${a.margenSug!=null?`margen ${pct(a.margenSug)}${a.difPrecio?` · ${a.difPrecio>0?'+':''}${pct(a.difPrecio)} vs hoy`:''}`:''}</span></div>
+      <div class="kpi"><span class="l">Tiendas online</span><span class="v num">${money(a.cfg.ref)}</span><span class="h">${a.margenRef!=null?`con ese precio ganarías ${pct(a.margenRef)}`:''}</span></div>
+    </section>
+    ${a.precioSug && a.precioSug!==a.precioActual?`<div class="split"><button class="btn" data-ase-all data-v="${a.precioSug}">Poner ${money(a.precioSug)} a todos los sabores</button>${a.cfg.ref&&a.cfg.ref!==a.precioSug?`<button class="btn ghost" data-ase-all data-v="${a.cfg.ref}">Usar precio de mercado (${money(a.cfg.ref)})</button>`:''}</div>
+    <p class="sub">Cambia el precio de todo el stock y de las próximas reposiciones. El catálogo y el mensaje de WhatsApp se actualizan solos.</p>`:'<p class="note">Tu precio ya está en el sugerido.</p>'}
+  </section>
+  <section class="panel"><div class="panel-head"><div><h2>Análisis por sabor</h2><span class="sub">Qué hacer con cada uno (el precio es el mismo para todos)</span></div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th class="r">Stock</th><th class="r">Vend. 30d</th><th class="r">Alcanza</th><th>Qué hacer</th></tr></thead><tbody>
+    ${a.rows.slice().sort((x,y)=>y.v30-x.v30||y.st-x.st).map(r=>{ const k = r.accion==='Promo'?['Liquidar con combo','warn']: r.accion==='Demanda alta'?['Se vende rápido','ok']: r.st===0&&r.v30?['Reponer','bad']: r.st===0?['Sin stock','mid']:['Normal','mid'];
+      const txt = r.accion==='Promo'? r.motivo.replace(/ Bajalo para recuperar la plata\.| Una promo lo mueve más rápido\./,' Metelo en un combo y no compres más por ahora.') : r.accion==='Demanda alta'? 'Es de los que más salen: que no te falte.' : r.st===0&&r.v30? 'Se vendió y no te queda: reponelo.' : r.motivo;
+      return `<tr><td><b>${esc(r.p.sabor)}</b></td><td class="r num">${r.st}</td><td class="r num">${r.v30}</td><td class="r num">${r.dias!=null?r.dias+' d':'—'}</td><td><span class="pill ${k[1]}">${k[0]}</span> <span class="sub">${esc(txt)}</span></td></tr>`; }).join('')}
     </tbody></table></div>
-    <p class="sub">"Aplicar" cambia el precio de venta de las unidades que tenés en stock de ese sabor (y de las próximas reposiciones). El catálogo y el mensaje de WhatsApp se actualizan solos.</p>
   </section>
   <section class="panel"><h2>Ajustes del asesor</h2>
     <form class="form" id="f-ase">
@@ -824,9 +847,8 @@ function bindApp(){
     if(!num) return toast('Ese número no parece un celular válido');
     save(()=>S.db.doc('catalogo/actual').set({telefono:num, telefonoTxt:txt, titulo:document.getElementById('cat-tit').value.trim()||MSG_HEADER, promo:document.getElementById('cat-promo').value.trim(), activo:document.getElementById('cat-act').checked, items:catalogoItems(), actualizado:Date.now()},{merge:true}), 'Catálogo publicado'); };
   if(S.tab==='asesor') cargarBlue();
-  q('[data-ase-apply]',b=>b.onclick=()=>{ const pid=b.dataset.aseApply, v=Number(b.dataset.v); save(()=>aplicarPrecio(pid,v), `${prodName(pid)}: precio ${money(v)}`); });
-  q('[data-ase-all]',b=>b.onclick=async()=>{ const rs=asesor().rows.filter(r=>r.sug&&r.sug!==r.precio&&r.st>0&&['Subir','Bajar','Margen muy bajo'].includes(r.veredicto[0]));
-    await save(async()=>{ for(const r of rs) await aplicarPrecio(r.p.id, r.sug); }, `Precios actualizados en ${rs.length} sabor${rs.length===1?'':'es'}`); });
+  q('[data-ase-all]',b=>b.onclick=async()=>{ const v=Number(b.dataset.v); if(!(v>0)) return; const ids=Object.keys(S.prods);
+    await save(async()=>{ for(const id of ids) await aplicarPrecio(id, v); }, `Precio ${money(v)} aplicado a los ${ids.length} sabores`); });
   q('[data-ase-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(textoAsesor(asesor())); toast('Datos copiados: pegalos en Claude'); }catch(e){ toast('No se pudo copiar'); } });
   const fase=document.getElementById('f-ase'); if(fase) fase.onsubmit=e=>{ e.preventDefault();
     ssSet('cv_asesor', JSON.stringify({margen:Math.min(80,Math.max(5,Number(document.getElementById('ase-m').value)||35)), ref:Number(document.getElementById('ase-r').value)||0, redondeo:Number(document.getElementById('ase-red').value)||500})); toast('Ajustes guardados'); render(); };
