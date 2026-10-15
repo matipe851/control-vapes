@@ -505,7 +505,8 @@ function viewStock(){
     <label>Sabor<input id="p-sabor" required maxlength="50" placeholder="Grape Ice"></label>
     <label>Modelo<input id="p-modelo" maxlength="40" value="Elf Bar Ice King"></label>
     <label>Puffs<input id="p-puffs" type="number" min="0" value="40000"></label>
-    <label>Costo unitario<input id="p-costo" type="number" min="0" placeholder="$"></label>
+    <label>Costo unitario en US$<input id="p-usd" type="number" min="0" step="0.01" placeholder="US$"></label>
+    <label>o costo en pesos<input id="p-costo" type="number" min="0" placeholder="$"></label>
     <label>Precio de venta<input id="p-precio" type="number" min="0" placeholder="$"></label>
     <label>Stock inicial<input id="p-stock" type="number" min="0" value="0"></label>
     <label>Stock mínimo<input id="p-min" type="number" min="0" value="2"></label>
@@ -513,13 +514,16 @@ function viewStock(){
   </form></section>`:''}
   ${viewPedido()}
   <section class="panel"><div class="panel-head"><h2>Stock por sabor</h2><span class="sub">Stock actual = inicial + compras − ventas</span></div>
-  ${prods.length?`<div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th>Modelo</th><th class="r">Costo</th><th class="r">Precio</th><th class="r">Vendidas</th><th class="r">Stock</th><th>Por precio</th><th>Estado</th>${admin?'<th></th>':''}</tr></thead><tbody>
+  ${admin&&prods.length?`<div class="split note" style="color:var(--fg)"><span>Costo en US$ para <b>todos</b> los sabores</span><input id="usd-all" type="number" min="0" step="0.01" placeholder="US$" style="width:110px"><button class="btn sm" data-usd-all>Aplicar</button>
+    <span class="sub">${S.blue?`Se pasa a pesos con el blue promedio de hoy (${money(S.blue.prom)})`:(S.blueErr||'Buscando cotización del dólar…')}</span></div>`:''}
+  ${prods.length?`<div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th>Modelo</th><th class="r">Costo US$</th><th class="r">Costo $</th><th class="r">Precio</th><th class="r">Vendidas</th><th class="r">Stock</th><th>Por precio</th><th>Estado</th>${admin?'<th></th>':''}</tr></thead><tbody>
   ${prods.map(p=>{const s=stockOf(p.id); const st= s<=0?['Sin stock','bad']: s<=(Number(p.stockMin)||0)?['Reponer','warn']:['OK','ok'];
     return `<tr><td><b>${esc(p.sabor)}</b></td><td class="sub">${esc(p.modelo||'')} ${p.puffs?`· ${n0.format(p.puffs)} puffs`:''}</td>
-    <td class="r">${admin?`<input class="num" style="width:96px;text-align:right" type="number" min="0" data-edit="${p.id}" data-f="costo" value="${Number(p.costo)||''}" placeholder="$" aria-label="Costo de ${esc(p.sabor)}">`:money(p.costo)}</td>
+    <td class="r">${admin?`<input class="num" style="width:84px;text-align:right" type="number" min="0" step="0.01" data-usd="${p.id}" value="${Number(p.costoUSD)||''}" placeholder="US$" aria-label="Costo en dólares de ${esc(p.sabor)}">`:(p.costoUSD?usd(p.costoUSD):'—')}</td>
+    <td class="r">${admin?`<input class="num" style="width:96px;text-align:right" type="number" min="0" data-edit="${p.id}" data-f="costo" value="${Number(p.costo)||''}" placeholder="$" aria-label="Costo de ${esc(p.sabor)}">`:money(p.costo)}${p.costoUSD&&p.tc?`<br><span class="sub num" style="white-space:nowrap">× ${money(p.tc)}</span>`:''}</td>
     <td class="r">${admin?`<input class="num" style="width:96px;text-align:right" type="number" min="0" data-edit="${p.id}" data-f="precio" value="${Number(p.precio)||''}" placeholder="$" aria-label="Precio de ${esc(p.sabor)}">`:money(p.precio)}</td>
     <td class="r num">${sold[p.id]||0}</td><td class="r num"><b>${s}</b></td><td class="sub">${(()=>{const vs=variantsOf(p.id).filter(g=>g.restante>0); return vs.length>1? vs.map(g=>`<span style="white-space:nowrap">${g.restante} a ${money(g.precio)} <span title="costo">(c. ${money(g.costo)})</span></span>`).join('<br>') : '—';})()}</td><td><span class="pill ${st[1]}">${st[0]}</span></td>${admin?`<td class="r">${delBtn('productos',p.id)}</td>`:''}</tr>`}).join('')}
-  </tbody></table></div>${admin?'<p class="sub">Costo y precio de acá son los del stock inicial (y se usan de base para nuevas reposiciones). Cada reposición tiene su propio costo y precio, que se editan en Compras. Si un sabor tiene unidades a precios distintos, se ven separadas en "Por precio" y en Ventas.</p>':''}`:`<p class="empty">Todavía no hay sabores cargados.</p>`}
+  </tbody></table></div>${admin?'<p class="sub">Si ponés el costo en US$, el costo en pesos se calcula solo con el blue promedio del día y queda guardada la cotización. Costo y precio de acá son los del stock inicial (y se usan de base para nuevas reposiciones). Cada reposición tiene su propio costo y precio, que se editan en Compras. Si un sabor tiene unidades a precios distintos, se ven separadas en "Por precio" y en Ventas.</p>':''}`:`<p class="empty">Todavía no hay sabores cargados.</p>`}
   </section>`;
 }
 
@@ -569,7 +573,8 @@ function asesor(){
   const cfg=aseCfg(); const t=today(); const blue=S.blue?.prom||0;
   const compras=Object.values(S.compras);
   const usdCompras=compras.filter(c=>Number(c.costoUSD)>0).sort((a,b)=>(b.creado||0)-(a.creado||0));
-  const usdProm = usdCompras.length ? usdCompras.slice(0,10).reduce((a,c)=>a+Number(c.costoUSD),0)/Math.min(10,usdCompras.length) : 0;
+  const usdProds=Object.values(S.prods).map(p=>Number(p.costoUSD)).filter(x=>x>0);
+  const usdProm = usdProds.length ? usdProds.reduce((a,b)=>a+b,0)/usdProds.length : usdCompras.length ? usdCompras.slice(0,10).reduce((a,c)=>a+Number(c.costoUSD),0)/Math.min(10,usdCompras.length) : 0;
   const ultTc = usdCompras[0]?.tc || 0;
   const vs30=Object.values(S.ventas).filter(v=>v.fecha && daysBetween(v.fecha,t)>=0 && daysBetween(v.fecha,t)<30);
   const rows=Object.values(S.prods).map(p=>{
@@ -580,7 +585,7 @@ function asesor(){
     const precio=(vg[0]&&vg[0].precio)||Number(p.precio)||0;
     const lots=lotsOf(p.id).filter(l=>l.restante>0);
     const costoHist = lots.length ? lots.reduce((a,l)=>a+l.costo*l.restante,0)/lots.reduce((a,l)=>a+l.restante,0) : (Number(p.costo)||0);
-    const ultUsd = compras.filter(c=>c.productoId===p.id && Number(c.costoUSD)>0).sort((a,b)=>(b.creado||0)-(a.creado||0))[0]?.costoUSD || usdProm;
+    const ultUsd = Number(p.costoUSD) || compras.filter(c=>c.productoId===p.id && Number(c.costoUSD)>0).sort((a,b)=>(b.creado||0)-(a.creado||0))[0]?.costoUSD || usdProm;
     const costoRepo = (ultUsd && blue) ? Math.round(ultUsd*blue) : (costoHist||Number(p.costo)||0);
     const margenHoy = precio ? (precio-costoRepo)/precio : null;
     // precio sugerido: costo de reposición + margen objetivo, ajustado por demanda
@@ -816,6 +821,7 @@ function bindAuth(){
 function writeErr(err){
   const c=err?.code||'';
   if(c==='permission-denied') return 'No tenés permiso para hacer eso.';
+  if(c==='sin-blue') return 'Falta la cotización del dólar. Probá en unos segundos.';
   if(c==='unavailable') return 'Sin conexión: se va a guardar cuando vuelva internet.';
   return 'No se pudo guardar. Probá de nuevo.';
 }
@@ -919,7 +925,19 @@ function bindApp(){
   if(fp) fp.onsubmit=e=>{ e.preventDefault(); const v=id=>document.getElementById(id).value;
     const sabor=v('p-sabor').trim(); if(!sabor) return;
     if(Object.values(S.prods).some(p=>p.sabor.toLowerCase()===sabor.toLowerCase())) return toast('Ese sabor ya existe');
-    save(()=>S.db.collection('productos').add({sabor, modelo:v('p-modelo').trim(), puffs:Number(v('p-puffs'))||0, costo:Number(v('p-costo'))||0, precio:Number(v('p-precio'))||0, stockInicial:Number(v('p-stock'))||0, stockMin:Number(v('p-min'))||0, creado:Date.now()}), 'Sabor agregado'); };
+    const pu=Number(v('p-usd'))||0; const bl=S.blue?.prom||0;
+    if(pu && !bl) return toast('Todavía no cargó la cotización del dólar. Probá en unos segundos');
+    const extraU = pu ? {costoUSD:pu, tc:bl} : {};
+    save(()=>S.db.collection('productos').add({sabor, modelo:v('p-modelo').trim(), puffs:Number(v('p-puffs'))||0, costo: pu? Math.round(pu*bl) : (Number(v('p-costo'))||0), ...extraU, precio:Number(v('p-precio'))||0, stockInicial:Number(v('p-stock'))||0, stockMin:Number(v('p-min'))||0, creado:Date.now()}), 'Sabor agregado'); };
+  if(S.tab==='stock') cargarBlue();
+  const setUsd=async(ids,u)=>{ const bl=S.blue?.prom||0; if(!bl) throw Object.assign(new Error('sin cotización'),{code:'sin-blue'});
+    const b=S.db.batch(); ids.forEach(id=>b.update(S.db.doc('productos/'+id),{costoUSD:u, costo:Math.round(u*bl), tc:bl})); await b.commit(); };
+  q('[data-usd]',inp=>inp.onchange=()=>{ const id=inp.dataset.usd, u=Number(inp.value)||0; if(!(u>0)) return; if(Number(S.prods[id]?.costoUSD)===u) return;
+    if(!S.blue) return toast('Todavía no cargó la cotización del dólar');
+    save(()=>setUsd([id],u), `${prodName(id)}: ${usd(u)} = ${money(Math.round(u*S.blue.prom))}`); });
+  q('[data-usd-all]',b=>b.onclick=()=>{ const u=Number(document.getElementById('usd-all').value)||0; if(!(u>0)) return toast('Poné el costo en dólares');
+    if(!S.blue) return toast('Todavía no cargó la cotización del dólar'); const ids=Object.keys(S.prods);
+    save(()=>setUsd(ids,u), `Costo ${usd(u)} (${money(Math.round(u*S.blue.prom))}) en los ${ids.length} sabores`); });
   document.querySelectorAll('[data-edit]').forEach(inp=>inp.onchange=()=>{ const id=inp.dataset.edit, f=inp.dataset.f; const val=Number(inp.value)||0;
     if((Number(S.prods[id]?.[f])||0)===val) return; save(()=>S.db.doc('productos/'+id).update({[f]:val}), f==='costo'?'Costo actualizado':'Precio actualizado'); });
 
@@ -955,7 +973,7 @@ function bindApp(){
   if(kprod) kprod.onchange=()=>{ S.kf.prod=kprod.value; const ls=lotsOf(kprod.value); const last=ls[ls.length-1]; if(!last) return;
     const lastC=Object.values(S.compras).filter(c=>c.productoId===kprod.value&&c.costoUSD).sort((a,b)=>(b.creado||0)-(a.creado||0))[0];
     if(last.precio) S.kf.precio=String(last.precio);
-    if(S.kf.mon==='ARS'){ if(last.costo) S.kf.costo=String(last.costo); } else if(lastC) S.kf.usd=String(lastC.costoUSD);
+    if(S.kf.mon==='ARS'){ if(last.costo) S.kf.costo=String(last.costo); } else if(Number(S.prods[kprod.value]?.costoUSD)) S.kf.usd=String(S.prods[kprod.value].costoUSD); else if(lastC) S.kf.usd=String(lastC.costoUSD);
     render(); };
   [['k-fecha','fecha'],['k-cant','cant'],['k-usd','usd'],['k-tc','tc'],['k-costo','costo'],['k-precio','precio']].forEach(([id,k])=>{ const el=document.getElementById(id); if(el) el.oninput=()=>{ S.kf[k]=el.value;
     if(k==='usd'||k==='tc'||k==='cant'){ clearTimeout(S._kt); S._kt=setTimeout(()=>{ const a=document.activeElement?.id, pos=document.activeElement?.selectionStart; render(); const e2=document.getElementById(a); if(e2){ e2.focus(); } },500); } }; });
