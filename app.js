@@ -101,6 +101,8 @@ function waNumber(raw){
 }
 const WA_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.6.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.3.8 3.2.7a2.7 2.7 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.2-.2-.5-.3Z"/></svg>';
 const conTel = () => Object.values(S.clients).filter(c=>waNumber(c.contacto)).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+const freqTxt = o => o.freq==null ? '—' : `${Math.round(o.freq)} d${o.freqEstimada?' <span class="sub" title="Una sola compra: se usa la frecuencia típica de tus clientes">(est.)</span>':(o.tol?` <span class="sub">±${o.tol}</span>`:'')}`;
+const faltanTxt = o => o.faltan==null ? '' : o.faltan>0 ? `en ${o.faltan} d` : o.faltan===0 ? 'hoy' : `hace ${-o.faltan} d`;
 const paraContactarIds = () => Object.values(clientStats()).filter(o=>(o.estado[0]==='Contactar'||o.estado[0]==='Inactivo') && waNumber(o.c.contacto)).map(o=>o.c.id);
 function waHref(c){ return `https://api.whatsapp.com/send?phone=${waNumber(c.contacto)}&text=${encodeURIComponent(mensajeStock())}`; }
 function startBulk(ids){ const q=ids.filter(id=>S.clients[id] && waNumber(S.clients[id].contacto)); if(!q.length) return toast('No hay clientes con teléfono para enviar'); S.bulk={ids:q, i:0}; S.tab='clientes'; ssSet('cv_tab','clientes'); render(); document.getElementById('bulk')?.scrollIntoView({block:'start'}); }
@@ -227,18 +229,39 @@ function clientStats(){
     o.unidades+=Number(v.cantidad)||0; o.gasto+=ventaTotal(v); o.fechas.add(v.fecha);
     o.sabores[v.productoId]=(o.sabores[v.productoId]||0)+(Number(v.cantidad)||0);
   }
+  const addDays=(f,n)=>{const d=dParse(f); d.setDate(d.getDate()+Math.round(n)); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;};
+  const median=a=>{ if(!a.length) return null; const x=[...a].sort((p,q)=>p-q); const m=Math.floor(x.length/2); return x.length%2?x[m]:(x[m-1]+x[m])/2; };
+  // 1) intervalos entre compras de cada cliente (las compras del mismo día cuentan como una)
   for(const o of Object.values(out)){
-    const f=[...o.fechas].sort(); o.compras=f.length;
-    o.ultima=f[f.length-1]||null;
-    o.freq = f.length>1 ? daysBetween(f[0],f[f.length-1])/(f.length-1) : null;
-    o.desde = o.ultima ? daysBetween(o.ultima,t) : null;
-    const fav=Object.entries(o.sabores).sort((a,b)=>b[1]-a[1])[0]; o.fav = fav? prodName(fav[0]) : '—';
+    const f=[...o.fechas].filter(Boolean).sort(); o.compras=f.length; o.fechasOrd=f;
+    o.ultima=f[f.length-1]||null; o.desde=o.ultima? daysBetween(o.ultima,t) : null;
+    o.intervalos=[]; for(let i=1;i<f.length;i++){ const d=daysBetween(f[i-1],f[i]); if(d>0) o.intervalos.push(d); }
+    const fav=Object.entries(o.sabores).sort((a,b)=>b[1]-a[1])[0]; o.fav = fav? prodName(fav[0]) : '—'; o.favId = fav?fav[0]:null;
+  }
+  // 2) frecuencia típica del negocio, para clientes con una sola compra
+  const freqs=Object.values(out).filter(o=>o.intervalos.length).map(o=>median(o.intervalos));
+  const freqGlobal = freqs.length ? Math.max(3, Math.round(median(freqs))) : 30;
+  // 3) frecuencia de cada cliente: promedio ponderado (las compras recientes pesan más), recortando valores raros
+  for(const o of Object.values(out)){
+    const iv=o.intervalos;
+    if(iv.length){
+      const med=median(iv); const capped = iv.length>=3 ? iv.map(d=>Math.min(d, med*2)) : iv;
+      let sw=0, sx=0; capped.forEach((d,i)=>{ const w=i+1; sw+=w; sx+=w*d; });
+      o.freq=sx/sw; o.freqEstimada=false;
+      const mean=capped.reduce((a,b)=>a+b,0)/capped.length;
+      o.desvio = capped.length>=2 ? Math.sqrt(capped.reduce((a,d)=>a+(d-mean)**2,0)/capped.length) : null;
+      o.confianza = iv.length>=4?'alta':iv.length>=2?'media':'baja';
+    } else { o.freq = o.ultima? freqGlobal : null; o.freqEstimada=true; o.desvio=null; o.confianza='baja'; }
+    // margen de tolerancia: según qué tan regular es el cliente
+    o.tol = o.freq==null? 0 : Math.max(2, Math.round(Math.max(o.desvio||0, o.freq*0.25)));
+    o.proxima = (o.ultima && o.freq!=null) ? addDays(o.ultima, o.freq) : null;
+    o.faltan = o.proxima ? daysBetween(t, o.proxima) : null;   // >0: faltan días · <0: atrasado
     if(!o.ultima) o.estado=['Sin compras','mid'];
-    else if(o.freq==null) o.estado = o.desde>30 ? ['Contactar','warn'] : ['Nuevo','mid'];
-    else if(o.desde > o.freq*2) o.estado=['Inactivo','bad'];
-    else if(o.desde > o.freq) o.estado=['Contactar','warn'];
-    else o.estado=['Al día','ok'];
-    o.proxima = (o.ultima && o.freq!=null) ? (()=>{const d=dParse(o.ultima); d.setDate(d.getDate()+Math.round(o.freq)); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;})() : null;
+    else if(o.faltan < -(o.freq + o.tol)) o.estado=['Inactivo','bad'];
+    else if(o.faltan < -o.tol) o.estado=['Contactar','warn'];
+    else if(o.faltan <= Math.min(3,o.tol)) o.estado=['Le toca ahora','warn'];
+    else if(o.faltan <= 7) o.estado=['Pide pronto','mid'];
+    else o.estado = o.freqEstimada ? ['Nuevo','mid'] : ['Al día','ok'];
   }
   return out;
 }
@@ -365,6 +388,10 @@ function viewResumen(){
     <section class="panel"><div class="panel-head"><h2>Top 10 clientes</h2><span class="sub">unidades en el período</span></div>${barList(topCli, n0.format)}</section>
     <section class="panel"><div class="panel-head"><div><h2>Para contactar</h2><span class="sub">pasaron su frecuencia habitual</span></div>${paraContactarIds().length?`<button class="btn sm" data-bulk-pc-go>${WA_ICON.replace('<svg','<svg style="width:14px;height:14px;fill:currentColor;vertical-align:-2px"')} Enviar a todos (${paraContactarIds().length})</button>`:''}</div>
       ${cs.length?`<div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Última</th><th class="r">Días</th><th>Estado</th><th></th></tr></thead><tbody>${cs.map(o=>`<tr><td>${esc(o.c.nombre)}</td><td class="num">${fmtDate(o.ultima)}</td><td class="r num">${o.desde}</td><td><span class="pill ${o.estado[1]}">${o.estado[0]}</span></td><td class="r">${waBtn(o.c)||(S.users[S.me]?.rol==='admin'?`<button class="btn ghost sm" data-cli-goedit="${o.c.id}">Cargar teléfono</button>`:'<span class="sub">Sin teléfono</span>')}</td></tr>`).join('')}</tbody></table></div>`:`<p class="empty">Nadie atrasado por ahora.</p>`}</section>
+    <section class="panel"><div class="panel-head"><div><h2>Próximos pedidos</h2><span class="sub">les toca comprar en los próximos 7 días, según su frecuencia</span></div></div>
+      ${(()=>{ const ps=Object.values(clientStats()).filter(o=>o.faltan!=null && o.faltan>=-o.tol && o.faltan<=7).sort((a,b)=>a.faltan-b.faltan);
+        return ps.length?`<div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Cuándo</th><th class="r">Cada</th><th>Suele llevar</th><th></th></tr></thead><tbody>${ps.map(o=>`<tr><td>${esc(o.c.nombre)}</td><td class="num"><span class="pill ${o.faltan<=0?'warn':'mid'}">${faltanTxt(o)}</span></td><td class="r num" style="white-space:nowrap">${freqTxt(o)}</td><td>${esc(o.fav)}</td><td class="r">${waBtn(o.c)}</td></tr>`).join('')}</tbody></table></div>`:`<p class="empty">Nadie tiene previsto comprar esta semana.</p>`; })()}
+    </section>
   </div>
   ${low.length?`<section class="panel"><div class="panel-head"><h2>Reponer</h2></div><div class="split">${low.map(o=>`<span class="pill ${o.s<=0?'bad':'warn'}">${esc(o.p.sabor)} · ${o.s}</span>`).join('')}</div></section>`:''}`;
 }
@@ -464,9 +491,9 @@ function viewClientes(){
       <pre class="msg-preview">${esc(mensajeStock())}</pre>
     </details>
   </section>
-  <section class="panel"><div class="panel-head"><h2>Clientes</h2><span class="sub">Frecuencia = promedio de días entre compras · Tocá WhatsApp para abrir el chat con la lista de sabores</span></div>
+  <section class="panel"><div class="panel-head"><h2>Clientes</h2><span class="sub">"Cada" = cada cuántos días compra (promedio que le da más peso a las últimas compras; ± es cuánto suele variar). Tocá WhatsApp para abrir el chat con la lista de sabores</span></div>
   ${cs.length?`<div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Contacto</th><th class="r">Compras</th><th class="r">Unid.</th><th class="r">Gastó</th><th>Sabor favorito</th><th>Última</th><th class="r">Cada</th><th>Próxima</th><th>Estado</th>${admin?'<th></th>':''}</tr></thead><tbody>
-  ${cs.map(o=>{const ed=admin&&S.editCli===o.c.id; return `<tr><td>${ed?`<input id="ec-nombre" maxlength="50" value="${esc(o.c.nombre)}" style="width:140px" aria-label="Nombre">`:`<b>${esc(o.c.nombre)}</b>`}</td><td class="sub">${ed?`<input id="ec-contacto" maxlength="60" value="${esc(o.c.contacto||'')}" style="width:140px" placeholder="Teléfono / Instagram" aria-label="Contacto">`:`<span class="contact-cell">${esc(o.c.contacto||'')}${waBtn(o.c)}</span>`}</td><td class="r num">${o.compras}</td><td class="r num">${o.unidades}</td><td class="r num">${money(o.gasto)}</td><td>${esc(o.fav)}</td><td class="num">${fmtDate(o.ultima)}</td><td class="r num">${o.freq!=null?Math.round(o.freq)+' d':'—'}</td><td class="num">${fmtDate(o.proxima)}</td><td><span class="pill ${o.estado[1]}">${o.estado[0]}</span></td>${admin?`<td class="r"><span class="split" style="justify-content:flex-end;flex-wrap:nowrap">${ed?`<button class="btn sm" data-cli-save="${o.c.id}">Guardar</button><button class="btn ghost sm" data-cli-cancel>Cancelar</button>`:`<button class="btn ghost sm" data-cli-edit="${o.c.id}">Editar</button>${delBtn('clientes',o.c.id)}`}</span></td>`:''}</tr>`}).join('')}
+  ${cs.map(o=>{const ed=admin&&S.editCli===o.c.id; return `<tr><td>${ed?`<input id="ec-nombre" maxlength="50" value="${esc(o.c.nombre)}" style="width:140px" aria-label="Nombre">`:`<b>${esc(o.c.nombre)}</b>`}</td><td class="sub">${ed?`<input id="ec-contacto" maxlength="60" value="${esc(o.c.contacto||'')}" style="width:140px" placeholder="Teléfono / Instagram" aria-label="Contacto">`:`<span class="contact-cell">${esc(o.c.contacto||'')}${waBtn(o.c)}</span>`}</td><td class="r num">${o.compras}</td><td class="r num">${o.unidades}</td><td class="r num">${money(o.gasto)}</td><td>${esc(o.fav)}</td><td class="num">${fmtDate(o.ultima)}</td><td class="r num" style="white-space:nowrap">${freqTxt(o)}</td><td class="num" style="white-space:nowrap">${fmtDate(o.proxima)} <span class="sub">${faltanTxt(o)}</span></td><td><span class="pill ${o.estado[1]}">${o.estado[0]}</span></td>${admin?`<td class="r"><span class="split" style="justify-content:flex-end;flex-wrap:nowrap">${ed?`<button class="btn sm" data-cli-save="${o.c.id}">Guardar</button><button class="btn ghost sm" data-cli-cancel>Cancelar</button>`:`<button class="btn ghost sm" data-cli-edit="${o.c.id}">Editar</button>${delBtn('clientes',o.c.id)}`}</span></td>`:''}</tr>`}).join('')}
   </tbody></table></div>`:`<p class="empty">Sin clientes todavía. También se crean solos al cargar una venta con "+ Cliente nuevo".</p>`}
   </section>`;
 }
