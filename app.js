@@ -58,6 +58,52 @@ function variantsOf(pid){
 const prodName = pid => S.prods[pid]?.sabor || '(sabor borrado)';
 const clientName = cid => S.clients[cid]?.nombre || '(cliente borrado)';
 const userName = u => S.users[u]?.nombre || S.users[u]?.usuario || '(usuario borrado)';
+
+// ---------- WhatsApp ----------
+const MSG_HEADER = 'ELF BAR ICE KING 40K PUFF';
+// keyword → emoji (español e inglés). Se buscan en el nombre del sabor, en el orden en que aparecen.
+const FRUTAS = [
+  [/(water ?melon|sand[ií]a)/,'🍉'], [/(straw ?berr|frutilla|fresa)/,'🍓'], [/(blue ?berr|ar[aá]ndano|mixed berr|\bberr|blue razz|\brazz)/,'🫐'],
+  [/(grape|\buva)/,'🍇'], [/mango/,'🥭'], [/(banana|pl[aá]tano)/,'🍌'], [/(cherry|cereza)/,'🍒'], [/(peach|durazno|melocot)/,'🍑'],
+  [/(pine ?apple|anan[aá]|pi[ñn]a\b)/,'🍍'], [/(\bapple|manzana)/,'🍏'], [/(lemon|lim[oó]n|\blime|\blima\b)/,'🍋'],
+  [/(orange|naranja|mandarin)/,'🍊'], [/kiwi/,'🥝'], [/(coconut|\bcoco\b)/,'🥥'], [/(\bmelon|\bmel[oó]n)/,'🍈'], [/(\bpear|\bpera\b)/,'🍐'],
+  [/(passion|maracuy)/,'🌺'], [/(dragon|pitaya|pitahaya)/,'🐉'], [/(mint|menta)/,'🌿'], [/\bcola\b/,'🥤'], [/(tobacco|tabaco)/,'🍂'],
+  [/(coffee|caf[eé])/,'☕'], [/(vanilla|vainilla)/,'🍦'], [/(candy|\bgum\b|chicle|bubble)/,'🍬'], [/(energy|red bull)/,'⚡']
+];
+function frutaDe(sabor){
+  const s=' '+String(sabor||'').toLowerCase()+' ';
+  const hits=[];
+  for(const [re,em] of FRUTAS){ const m=s.match(re); if(m && !hits.some(h=>h.em===em)) hits.push({i:m.index, em}); }
+  return hits.sort((a,b)=>a.i-b.i).map(h=>h.em).join('');
+}
+const esIce = sabor => /\bice\b/i.test(String(sabor||''));
+function mensajeStock(){
+  const disp=Object.values(S.prods).filter(p=>stockOf(p.id)>0).sort((a,b)=>a.sabor.localeCompare(b.sabor));
+  const lineas=disp.map(p=>`• ${p.sabor} ${frutaDe(p.sabor)}${esIce(p.sabor)?'❄️':''}`.trimEnd());
+  return `*${MSG_HEADER}*\n\n` + (lineas.length? lineas.join('\n') : 'Por ahora no hay sabores en stock.');
+}
+// Normaliza un teléfono argentino al formato de WhatsApp: 549 + área (sin 0) + número (sin 15)
+function waNumber(raw){
+  let d=String(raw||'').replace(/\D/g,'');
+  if(d.length<8) return null;
+  if(d.startsWith('00')) d=d.slice(2);
+  if(d.startsWith('54')){ d=d.slice(2); if(d.startsWith('9')) d=d.slice(1); }
+  if(d.startsWith('0')) d=d.slice(1);
+  if(d.length===8) d='11'+d;                                  // sin código de área → CABA/GBA
+  else if(d.length===10 && d.startsWith('15')) d='11'+d.slice(2); // 15 xxxx-xxxx
+  else if(d.length===12){                                     // área + 15 + número
+    for(const a of [2,3,4]) if(d.slice(a,a+2)==='15'){ d=d.slice(0,a)+d.slice(a+2); break; }
+  }
+  if(d.length!==10) return null;
+  return '549'+d;
+}
+const WA_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.6.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.3.8 3.2.7a2.7 2.7 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.2-.2-.5-.3Z"/></svg>';
+function waBtn(c){
+  const num=waNumber(c?.contacto); if(!num) return '';
+  const href=`https://api.whatsapp.com/send?phone=${num}&text=${encodeURIComponent(mensajeStock())}`;
+  return `<a class="wa" href="${esc(href)}" target="_blank" rel="noopener" title="Abrir chat con ${esc(c.nombre)} con la lista de sabores">${WA_ICON}WhatsApp</a>`;
+}
+
 function inPeriod(fecha){
   const t=today();
   if(S.period==='todo') return true;
@@ -106,9 +152,11 @@ function render(){
   if(!S.users[S.me]){ $app.innerHTML = screen('Tu usuario fue dado de baja o todavía no tiene acceso. Hablá con el administrador.', true); bindLogout(); return; }
   const allReady = Object.values(S.ready).every(Boolean);
   const active = document.activeElement?.id;
+  const openDetails = !!document.getElementById('msg-det')?.open;
   $app.innerHTML = viewShell(allReady);
   bindApp();
-  if(active){ const el=document.getElementById(active); if(el && el.tagName!=='BUTTON') el.focus(); }
+  if(openDetails){ const d=document.getElementById('msg-det'); if(d) d.open=true; }
+  if(active){ const el=document.getElementById(active); if(el && el.tagName!=='BUTTON' && el.tagName!=='A') el.focus(); }
 }
 function screen(msg, logout){
   return `<div class="auth"><div class="auth-card"><div class="brand"><div class="brand-mark">CV</div><h1>Control Vapes</h1></div><p>${msg}</p>${logout?'<button class="btn ghost" id="logout">Salir</button>':''}</div></div>`;
@@ -215,7 +263,7 @@ function viewResumen(){
     <section class="panel"><div class="panel-head"><h2>Medio de pago</h2><span class="sub">facturación</span></div>${barList(rankMedio, money, 'ice')}</section>
     <section class="panel"><div class="panel-head"><h2>Top 10 clientes</h2><span class="sub">unidades en el período</span></div>${barList(topCli, n0.format)}</section>
     <section class="panel"><div class="panel-head"><h2>Para contactar</h2><span class="sub">pasaron su frecuencia habitual</span></div>
-      ${cs.length?`<div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Última</th><th class="r">Días</th><th>Estado</th></tr></thead><tbody>${cs.map(o=>`<tr><td>${esc(o.c.nombre)}</td><td class="num">${fmtDate(o.ultima)}</td><td class="r num">${o.desde}</td><td><span class="pill ${o.estado[1]}">${o.estado[0]}</span></td></tr>`).join('')}</tbody></table></div>`:`<p class="empty">Nadie atrasado por ahora.</p>`}</section>
+      ${cs.length?`<div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Última</th><th class="r">Días</th><th>Estado</th><th></th></tr></thead><tbody>${cs.map(o=>`<tr><td>${esc(o.c.nombre)}</td><td class="num">${fmtDate(o.ultima)}</td><td class="r num">${o.desde}</td><td><span class="pill ${o.estado[1]}">${o.estado[0]}</span></td><td class="r">${waBtn(o.c)}</td></tr>`).join('')}</tbody></table></div>`:`<p class="empty">Nadie atrasado por ahora.</p>`}</section>
   </div>
   ${low.length?`<section class="panel"><div class="panel-head"><h2>Reponer</h2></div><div class="split">${low.map(o=>`<span class="pill ${o.s<=0?'bad':'warn'}">${esc(o.p.sabor)} · ${o.s}</span>`).join('')}</div></section>`:''}`;
 }
@@ -304,12 +352,18 @@ function viewClientes(){
   <section class="panel"><div class="panel-head"><h2>Nuevo cliente</h2></div>
   <form class="form" id="f-cli" autocomplete="off">
     <label>Nombre<input id="c-nombre" required maxlength="50"></label>
-    <label>Teléfono / Instagram<input id="c-contacto" maxlength="60"></label>
+    <label>Teléfono (WhatsApp) / Instagram<input id="c-contacto" maxlength="60" placeholder="11 2345-6789"></label>
     <button class="btn" type="submit">Agregar cliente</button>
   </form></section>
-  <section class="panel"><div class="panel-head"><h2>Clientes</h2><span class="sub">Frecuencia = promedio de días entre compras</span></div>
+  <section class="panel">
+    <details id="msg-det"><summary>Mensaje de WhatsApp que se envía</summary>
+      <p class="sub" style="margin:8px 0">Se arma solo con los sabores que tienen stock en este momento.</p>
+      <pre class="msg-preview">${esc(mensajeStock())}</pre>
+    </details>
+  </section>
+  <section class="panel"><div class="panel-head"><h2>Clientes</h2><span class="sub">Frecuencia = promedio de días entre compras · Tocá WhatsApp para abrir el chat con la lista de sabores</span></div>
   ${cs.length?`<div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Contacto</th><th class="r">Compras</th><th class="r">Unid.</th><th class="r">Gastó</th><th>Sabor favorito</th><th>Última</th><th class="r">Cada</th><th>Próxima</th><th>Estado</th>${admin?'<th></th>':''}</tr></thead><tbody>
-  ${cs.map(o=>{const ed=admin&&S.editCli===o.c.id; return `<tr><td>${ed?`<input id="ec-nombre" maxlength="50" value="${esc(o.c.nombre)}" style="width:140px" aria-label="Nombre">`:`<b>${esc(o.c.nombre)}</b>`}</td><td class="sub">${ed?`<input id="ec-contacto" maxlength="60" value="${esc(o.c.contacto||'')}" style="width:140px" placeholder="Teléfono / Instagram" aria-label="Contacto">`:esc(o.c.contacto||'')}</td><td class="r num">${o.compras}</td><td class="r num">${o.unidades}</td><td class="r num">${money(o.gasto)}</td><td>${esc(o.fav)}</td><td class="num">${fmtDate(o.ultima)}</td><td class="r num">${o.freq!=null?Math.round(o.freq)+' d':'—'}</td><td class="num">${fmtDate(o.proxima)}</td><td><span class="pill ${o.estado[1]}">${o.estado[0]}</span></td>${admin?`<td class="r"><span class="split" style="justify-content:flex-end;flex-wrap:nowrap">${ed?`<button class="btn sm" data-cli-save="${o.c.id}">Guardar</button><button class="btn ghost sm" data-cli-cancel>Cancelar</button>`:`<button class="btn ghost sm" data-cli-edit="${o.c.id}">Editar</button>${delBtn('clientes',o.c.id)}`}</span></td>`:''}</tr>`}).join('')}
+  ${cs.map(o=>{const ed=admin&&S.editCli===o.c.id; return `<tr><td>${ed?`<input id="ec-nombre" maxlength="50" value="${esc(o.c.nombre)}" style="width:140px" aria-label="Nombre">`:`<b>${esc(o.c.nombre)}</b>`}</td><td class="sub">${ed?`<input id="ec-contacto" maxlength="60" value="${esc(o.c.contacto||'')}" style="width:140px" placeholder="Teléfono / Instagram" aria-label="Contacto">`:`<span class="contact-cell">${esc(o.c.contacto||'')}${waBtn(o.c)}</span>`}</td><td class="r num">${o.compras}</td><td class="r num">${o.unidades}</td><td class="r num">${money(o.gasto)}</td><td>${esc(o.fav)}</td><td class="num">${fmtDate(o.ultima)}</td><td class="r num">${o.freq!=null?Math.round(o.freq)+' d':'—'}</td><td class="num">${fmtDate(o.proxima)}</td><td><span class="pill ${o.estado[1]}">${o.estado[0]}</span></td>${admin?`<td class="r"><span class="split" style="justify-content:flex-end;flex-wrap:nowrap">${ed?`<button class="btn sm" data-cli-save="${o.c.id}">Guardar</button><button class="btn ghost sm" data-cli-cancel>Cancelar</button>`:`<button class="btn ghost sm" data-cli-edit="${o.c.id}">Editar</button>${delBtn('clientes',o.c.id)}`}</span></td>`:''}</tr>`}).join('')}
   </tbody></table></div>`:`<p class="empty">Sin clientes todavía. También se crean solos al cargar una venta con "+ Cliente nuevo".</p>`}
   </section>`;
 }

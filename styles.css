@@ -105,3 +105,14 @@ tr:last-child td{border-bottom:0}
   .vline>span.r{grid-column:auto}
   .vtotal{margin-left:0;width:100%}
 }
+
+/* WhatsApp */
+:root{--wa:#1fa855}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--wa:#3fcf78}}
+:root[data-theme="dark"]{--wa:#3fcf78}
+.wa{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:8px;background:var(--wa);color:#fff;font-weight:600;font-size:13px;text-decoration:none;white-space:nowrap}
+.wa:hover{filter:brightness(1.08)}
+.wa svg{width:15px;height:15px;fill:currentColor}
+.contact-cell{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap}
+.msg-preview{white-space:pre-wrap;font-family:var(--body);font-size:14px;background:var(--surface-2);border-radius:8px;padding:12px 14px;margin:0;max-height:320px;overflow:auto;color:var(--fg)}
+details summary{cursor:pointer;font-weight:600;font-size:14px}
