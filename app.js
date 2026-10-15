@@ -359,11 +359,11 @@ function viewLogin(){
 function viewShell(allReady){
   const me=S.users[S.me]; const admin=me?.rol==='admin';
   const tabs=[['resumen','Resumen'],['ventas','Ventas'],['stock','Stock'],['clientes','Clientes'],['compras','Compras'],['fiado','Fiado'],['sabores','Clientes × sabor']];
-  if(admin) tabs.push(['catalogo','Catálogo'],['usuarios','Usuarios']);
+  if(admin) tabs.push(['asesor','Asesor'],['catalogo','Catálogo'],['usuarios','Usuarios']);
   tabs.push(['cuenta','Mi cuenta']);
   if(!tabs.some(t=>t[0]===S.tab)) S.tab='resumen';
   const body = !allReady ? `<div class="panel"><p class="empty">Cargando datos…</p></div>` :
-    ({resumen:viewResumen, ventas:viewVentas, stock:viewStock, clientes:viewClientes, compras:viewCompras, fiado:viewFiado, sabores:viewMatrix, usuarios:viewUsuarios, catalogo:viewCatalogo, cuenta:viewCuenta})[S.tab]();
+    ({resumen:viewResumen, ventas:viewVentas, stock:viewStock, clientes:viewClientes, compras:viewCompras, fiado:viewFiado, sabores:viewMatrix, usuarios:viewUsuarios, catalogo:viewCatalogo, asesor:viewAsesor, cuenta:viewCuenta})[S.tab]();
   return `<header class="top"><div class="top-in">
       <div class="top-row"><div class="brand"><div class="brand-mark">CV</div><h1>Control Vapes</h1></div>
         <div class="who"><span><b>${esc(me?.nombre||me?.usuario||'')}</b> · ${admin?'Administrador':'Vendedor'}</span><button class="btn ghost sm" id="logout">Salir</button></div></div>
@@ -559,6 +559,125 @@ async function cargarBlue(force){
   }catch(e){ console.error(e); S.blueErr='No se pudo traer la cotización. Escribila a mano.'; }
   S.bluePend=false; scheduleRender();
 }
+
+// ---------- Asesor financiero ----------
+const ASE_DEF={margen:35, ref:29900, redondeo:500};
+function aseCfg(){ let c={}; try{ c=JSON.parse(ssGet('cv_asesor')||'{}')||{}; }catch(e){} return {...ASE_DEF, ...c}; }
+const redondear=(v,r)=> r>0 ? Math.round(v/r)*r : Math.round(v);
+const pct = v => (v>=0?'':'−')+Math.abs(Math.round(v*100))+'%';
+function asesor(){
+  const cfg=aseCfg(); const t=today(); const blue=S.blue?.prom||0;
+  const compras=Object.values(S.compras);
+  const usdCompras=compras.filter(c=>Number(c.costoUSD)>0).sort((a,b)=>(b.creado||0)-(a.creado||0));
+  const usdProm = usdCompras.length ? usdCompras.slice(0,10).reduce((a,c)=>a+Number(c.costoUSD),0)/Math.min(10,usdCompras.length) : 0;
+  const ultTc = usdCompras[0]?.tc || 0;
+  const vs30=Object.values(S.ventas).filter(v=>v.fecha && daysBetween(v.fecha,t)>=0 && daysBetween(v.fecha,t)<30);
+  const rows=Object.values(S.prods).map(p=>{
+    const st=Math.max(0,stockOf(p.id));
+    const v30=vs30.filter(v=>v.productoId===p.id).reduce((a,v)=>a+(Number(v.cantidad)||0),0);
+    const porDia=v30/30; const dias= porDia>0 ? Math.round(st/porDia) : null;
+    const vg=variantsOf(p.id).filter(g=>g.restante>0);
+    const precio=(vg[0]&&vg[0].precio)||Number(p.precio)||0;
+    const lots=lotsOf(p.id).filter(l=>l.restante>0);
+    const costoHist = lots.length ? lots.reduce((a,l)=>a+l.costo*l.restante,0)/lots.reduce((a,l)=>a+l.restante,0) : (Number(p.costo)||0);
+    const ultUsd = compras.filter(c=>c.productoId===p.id && Number(c.costoUSD)>0).sort((a,b)=>(b.creado||0)-(a.creado||0))[0]?.costoUSD || usdProm;
+    const costoRepo = (ultUsd && blue) ? Math.round(ultUsd*blue) : (costoHist||Number(p.costo)||0);
+    const margenHoy = precio ? (precio-costoRepo)/precio : null;
+    // precio sugerido: costo de reposición + margen objetivo, ajustado por demanda
+    let base = costoRepo ? costoRepo/(1-cfg.margen/100) : 0;
+    let accion, motivo;
+    const lento = st>0 && (v30===0 || (dias!=null && dias>60));
+    const fuerte = v30>=2 && dias!=null && dias<21;
+    if(!costoRepo){ accion='Falta costo'; motivo='Cargá el costo (en Compras) para poder calcular el precio.'; base=precio; }
+    else if(lento){ base=Math.max(costoRepo*1.12, Math.min(precio||base, base)*0.9); accion='Promo'; motivo = v30===0 ? `No se vendió en 30 días y tenés ${st}. Bajalo para recuperar la plata.` : `Tenés stock para ~${dias} días. Una promo lo mueve más rápido.`; }
+    else if(fuerte){ base=base*1.03; accion='Demanda alta'; motivo=`Se vende rápido (${v30} en 30 días). Aguanta un precio un poco más alto.`; }
+    else { accion='Normal'; motivo=v30?`Rotación normal (${v30} en 30 días).`:'Sin stock ni ventas recientes.'; }
+    if(cfg.ref && !lento && base>cfg.ref*1.08 && costoRepo/(cfg.ref*1.08) < 0.85) base=cfg.ref*1.08; // no irse muy arriba del mercado si igual deja margen
+    const sug = base ? redondear(base, cfg.redondeo) : 0;
+    const dif = precio && sug ? (sug-precio)/precio : 0;
+    const veredicto = !precio ? ['Sin precio','bad'] : !costoRepo ? ['Falta costo','mid'] : margenHoy<0.15 ? ['Margen muy bajo','bad'] : Math.abs(dif)<0.03 ? ['Bien','ok'] : dif>0 ? ['Subir','warn'] : ['Bajar','mid'];
+    return {p, st, v30, dias, precio, costoHist, costoRepo, ultUsd, margenHoy, sug, dif, accion, motivo, veredicto, margenSug: sug? (sug-costoRepo)/sug : null};
+  }).sort((a,b)=>Math.abs(b.dif)-Math.abs(a.dif) || b.v30-a.v30);
+
+  // números del mes
+  const fact=vs30.reduce((a,v)=>a+ventaTotal(v),0), gan=vs30.reduce((a,v)=>a+ventaGanancia(v),0);
+  const desc=vs30.reduce((a,v)=>a+(Number(v.descuento)||0),0);
+  const sinCosto=vs30.filter(v=>!Number(v.costoUnit)).length;
+  const capital=rows.reduce((a,r)=>a+r.st*(r.costoHist||0),0), capitalRepo=rows.reduce((a,r)=>a+r.st*(r.costoRepo||0),0);
+  const valorVenta=rows.reduce((a,r)=>a+r.st*(r.precio||0),0);
+  const parado=rows.filter(r=>r.accion==='Promo').reduce((a,r)=>a+r.st*(r.costoHist||0),0);
+  const deuda=totalDeuda(); const ds=deudas(); const deudaVieja=ds.filter(o=>o.dias>14).reduce((a,o)=>a+o.total,0);
+
+  // consejos
+  const tips=[];
+  if(blue && ultTc && blue>ultTc*1.01){ const sub=(blue-ultTc)/ultTc; tips.push(['bad',`El dólar blue subió ${pct(sub)} desde tu última compra (${money(ultTc)} → ${money(blue)}). Reponer te sale más caro: revisá los precios marcados "Subir".`]); }
+  if(blue && ultTc && blue<ultTc*0.99) tips.push(['ok',`El dólar bajó desde tu última compra (${money(ultTc)} → ${money(blue)}). Buen momento para reponer.`]);
+  const bajos=rows.filter(r=>r.veredicto[0]==='Margen muy bajo'); if(bajos.length) tips.push(['bad',`${bajos.map(r=>r.p.sabor).join(', ')}: al costo de reposición de hoy ganás menos del 15%. Subí el precio o dejá de comprarlo.`]);
+  const subir=rows.filter(r=>r.veredicto[0]==='Subir'); if(subir.length) tips.push(['warn',`Podrías subir ${subir.length} sabor${subir.length>1?'es':''} y ganar ≈${money(subir.reduce((a,r)=>a+(r.sug-r.precio)*Math.max(r.v30,1),0))} más por mes con la misma venta.`]);
+  if(parado>0) tips.push(['warn',`Tenés ${money(parado)} (a costo) en sabores que casi no se venden. Liquidalos con promo antes de comprar más.`]);
+  if(fact && desc/ (fact+desc) > 0.05) tips.push(['warn',`En 30 días diste ${money(desc)} en descuentos (${pct(desc/(fact+desc))} de lo que hubieras facturado). Ojo que se come el margen.`]);
+  if(deudaVieja>0) tips.push(['bad',`Te deben ${money(deudaVieja)} hace más de 2 semanas. Cobrá antes de seguir fiando.`]); else if(deuda>0) tips.push(['mid',`Tenés ${money(deuda)} en fiado. Mandá recordatorio desde la pestaña Fiado.`]);
+  if(sinCosto) tips.push(['mid',`${sinCosto} venta${sinCosto>1?'s':''} del mes no tienen costo cargado: la ganancia real puede ser menor a la que ves.`]);
+  if(fact && gan/fact>0 && gan/fact < cfg.margen/100 - 0.05) tips.push(['warn',`Tu margen real del mes es ${pct(gan/fact)}, por debajo de tu objetivo de ${cfg.margen}%.`]);
+  if(!tips.length) tips.push(['ok','Todo en orden: precios alineados con tu costo y tu margen objetivo.']);
+  return {cfg, blue, ultTc, usdProm, rows, fact, gan, desc, capital, capitalRepo, valorVenta, parado, deuda, tips};
+}
+function textoAsesor(a){
+  const L=[`Sos mi asesor financiero para un pequeño negocio de reventa de Elf Bar Ice King 40K en Buenos Aires. Pago la mercadería en dólares (blue). Analizá estos datos y decime qué precios poner, qué comprar, qué liquidar y cómo mejorar la ganancia. Sé concreto y con números.`,
+  ``,`Dólar blue promedio hoy: ${a.blue?money(a.blue):'s/d'} · última compra a: ${a.ultTc?money(a.ultTc):'s/d'} · costo promedio US$ ${a.usdProm?a.usdProm.toFixed(2):'s/d'}`,
+  `Precio de referencia del mercado online: ${money(a.cfg.ref)} · margen objetivo ${a.cfg.margen}%`,
+  `Últimos 30 días: facturación ${money(a.fact)}, ganancia ${money(a.gan)}, descuentos ${money(a.desc)}, fiado pendiente ${money(a.deuda)}`,
+  `Stock: ${money(a.capital)} a costo, ${money(a.valorVenta)} a precio de venta`,``,
+  `Sabor | stock | vendidas 30d | precio | costo reposición hoy | margen hoy`,
+  ...a.rows.map(r=>`${r.p.sabor} | ${r.st} | ${r.v30} | ${money(r.precio)} | ${money(r.costoRepo)} | ${r.margenHoy!=null?pct(r.margenHoy):'s/d'}`)];
+  return L.join('\n');
+}
+function viewAsesor(){
+  const a=asesor(); const c=a.cfg;
+  return `<section class="panel"><div class="panel-head"><div><h2>Asesor financiero</h2><span class="sub">Analiza tus costos en dólares, el blue de hoy, la rotación de cada sabor y tu margen objetivo.</span></div>
+    <span class="sub">${a.blue?`Blue promedio hoy <b>${money(a.blue)}</b>`:(S.blueErr||'Buscando cotización…')}</span></div>
+    <section class="kpis">
+      <div class="kpi"><span class="l">Ganancia 30 días</span><span class="v num">${money(a.gan)}</span><span class="h">${a.fact?`margen real ${pct(a.gan/a.fact)} · objetivo ${c.margen}%`:'sin ventas'}</span></div>
+      <div class="kpi"><span class="l">Capital en stock</span><span class="v num">${money(a.capital)}</span><span class="h">${a.capitalRepo&&a.capitalRepo!==a.capital?`reponerlo hoy cuesta ${money(a.capitalRepo)}`:'a costo de compra'}</span></div>
+      <div class="kpi"><span class="l">Si vendés todo</span><span class="v num">${money(a.valorVenta)}</span><span class="h">ganancia potencial ${money(a.valorVenta-a.capital)}</span></div>
+      <div class="kpi"><span class="l">Plata parada</span><span class="v num" style="color:${a.parado?'var(--warn)':'inherit'}">${money(a.parado)}</span><span class="h">en sabores que no rotan</span></div>
+    </section>
+  </section>
+  <section class="panel"><h2>Lo que te recomiendo</h2>
+    <div style="display:grid;gap:8px">${a.tips.map(([k,txt])=>`<div class="note" style="border-left:3px solid var(--${k==='mid'?'accent':k});color:var(--fg)">${esc(txt)}</div>`).join('')}</div>
+  </section>
+  <section class="panel"><div class="panel-head"><div><h2>Precios sugeridos</h2><span class="sub">Precio = costo de reposición hoy (último costo en US$ × blue) + tu margen, ajustado por demanda</span></div>
+    ${a.rows.some(r=>r.veredicto[0]==='Subir'||r.veredicto[0]==='Bajar'||r.veredicto[0]==='Margen muy bajo')?`<button class="btn" data-ase-all>Aplicar todos los sugeridos</button>`:''}</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th class="r">Stock</th><th class="r">Vend. 30d</th><th class="r">Costo hoy</th><th class="r">Precio actual</th><th class="r">Margen hoy</th><th class="r">Sugerido</th><th>Por qué</th><th></th></tr></thead><tbody>
+    ${a.rows.map(r=>`<tr><td><b>${esc(r.p.sabor)}</b><br><span class="pill ${r.veredicto[1]}">${r.veredicto[0]}</span></td><td class="r num">${r.st}</td><td class="r num">${r.v30}</td>
+      <td class="r num" style="white-space:nowrap">${r.costoRepo?money(r.costoRepo):'—'}${r.ultUsd?`<br><span class="sub">US$ ${(+r.ultUsd).toFixed(2)}</span>`:''}</td>
+      <td class="r num">${r.precio?money(r.precio):'—'}</td><td class="r num" style="color:${r.margenHoy!=null&&r.margenHoy<0.15?'var(--bad)':'inherit'}">${r.margenHoy!=null?pct(r.margenHoy):'—'}</td>
+      <td class="r num" style="white-space:nowrap"><b style="font-size:16px">${r.sug?money(r.sug):'—'}</b>${r.sug&&r.precio&&r.sug!==r.precio?`<br><span class="sub">${r.dif>0?'+':''}${pct(r.dif)} · margen ${pct(r.margenSug)}</span>`:''}</td>
+      <td class="sub" style="min-width:200px">${esc(r.motivo)}</td>
+      <td class="r">${r.sug&&r.sug!==r.precio&&r.st>0?`<button class="btn ghost sm" data-ase-apply="${r.p.id}" data-v="${r.sug}">Aplicar</button>`:''}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="sub">"Aplicar" cambia el precio de venta de las unidades que tenés en stock de ese sabor (y de las próximas reposiciones). El catálogo y el mensaje de WhatsApp se actualizan solos.</p>
+  </section>
+  <section class="panel"><h2>Ajustes del asesor</h2>
+    <form class="form" id="f-ase">
+      <label>Margen objetivo (%)<input type="number" id="ase-m" min="5" max="80" value="${c.margen}"></label>
+      <label>Precio de referencia del mercado ($)<input type="number" id="ase-r" min="0" step="100" value="${c.ref}"></label>
+      <label>Redondear a<select id="ase-red">${[100,500,1000].map(n=>`<option value="${n}" ${c.redondeo===n?'selected':''}>$${n}</option>`).join('')}</select></label>
+      <button class="btn ghost" type="submit">Guardar ajustes</button>
+    </form>
+    <p class="sub">Margen = lo que te queda de cada venta sobre el precio. Referencia = lo que cobran las tiendas online (en octubre 2026, entre $29.900 y $31.990).</p>
+  </section>
+  <section class="panel"><div class="panel-head"><div><h2>Análisis con Claude</h2><span class="sub">Copia un resumen de tus números para pegarlo en Claude y pedirle un análisis más profundo.</span></div>
+    <div class="split"><button class="btn ghost" data-ase-copy>Copiar datos</button><a class="btn ghost" href="https://claude.ai/new" target="_blank" rel="noopener" style="text-decoration:none">Abrir Claude</a></div></div>
+  </section>`;
+}
+async function aplicarPrecio(pid, precio){
+  const b=S.db.batch(); b.update(S.db.doc('productos/'+pid),{precio});
+  const vivos=new Set(lotsOf(pid).filter(l=>l.restante>0 && !l.ini).map(l=>l.id));
+  Object.values(S.compras).filter(c=>c.productoId===pid && vivos.has(c.id)).forEach(c=>b.update(S.db.doc('compras/'+c.id),{precioUnit:precio}));
+  await b.commit();
+}
+
 const tcUsado = () => Number(S.kf.tc)||S.blue?.prom||0;
 
 function viewCompras(){
@@ -704,6 +823,13 @@ function bindApp(){
   if(fcat) fcat.onsubmit=e=>{ e.preventDefault(); const txt=document.getElementById('cat-tel').value.trim(); const num=waNumber(txt);
     if(!num) return toast('Ese número no parece un celular válido');
     save(()=>S.db.doc('catalogo/actual').set({telefono:num, telefonoTxt:txt, titulo:document.getElementById('cat-tit').value.trim()||MSG_HEADER, promo:document.getElementById('cat-promo').value.trim(), activo:document.getElementById('cat-act').checked, items:catalogoItems(), actualizado:Date.now()},{merge:true}), 'Catálogo publicado'); };
+  if(S.tab==='asesor') cargarBlue();
+  q('[data-ase-apply]',b=>b.onclick=()=>{ const pid=b.dataset.aseApply, v=Number(b.dataset.v); save(()=>aplicarPrecio(pid,v), `${prodName(pid)}: precio ${money(v)}`); });
+  q('[data-ase-all]',b=>b.onclick=async()=>{ const rs=asesor().rows.filter(r=>r.sug&&r.sug!==r.precio&&r.st>0&&['Subir','Bajar','Margen muy bajo'].includes(r.veredicto[0]));
+    await save(async()=>{ for(const r of rs) await aplicarPrecio(r.p.id, r.sug); }, `Precios actualizados en ${rs.length} sabor${rs.length===1?'':'es'}`); });
+  q('[data-ase-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(textoAsesor(asesor())); toast('Datos copiados: pegalos en Claude'); }catch(e){ toast('No se pudo copiar'); } });
+  const fase=document.getElementById('f-ase'); if(fase) fase.onsubmit=e=>{ e.preventDefault();
+    ssSet('cv_asesor', JSON.stringify({margen:Math.min(80,Math.max(5,Number(document.getElementById('ase-m').value)||35)), ref:Number(document.getElementById('ase-r').value)||0, redondeo:Number(document.getElementById('ase-red').value)||500})); toast('Ajustes guardados'); render(); };
   q('[data-cli-goedit]',b=>b.onclick=()=>{ S.tab='clientes'; ssSet('cv_tab','clientes'); S.editCli=b.dataset.cliGoedit; render(); document.getElementById('ec-contacto')?.focus(); });
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ S.tab=b.dataset.tab; S.confirm=null; S.editCli=null; ssSet('cv_tab',S.tab); render(); window.scrollTo(0,0); });
   const per=document.getElementById('period'); if(per) per.onchange=()=>{ S.period=per.value; ssSet('cv_period',S.period); render(); };
