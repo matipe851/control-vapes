@@ -82,8 +82,50 @@ const esIce = sabor => /\bice\b/i.test(String(sabor||''));
 function mensajeStock(){
   const disp=Object.values(S.prods).filter(p=>stockOf(p.id)>0).sort((a,b)=>a.sabor.localeCompare(b.sabor));
   const lineas=disp.map(p=>`• ${p.sabor} ${frutaDe(p.sabor)}${esIce(p.sabor)?'❄️':''}`.trimEnd());
-  return `*${MSG_HEADER}*\n\n` + (lineas.length? lineas.join('\n') : 'Por ahora no hay sabores en stock.');
+  const link = catalogoActivo() ? `\n\n🛒 Mirá precios y armá tu pedido acá:\n${catalogoURL()}` : '';
+  return `*${MSG_HEADER}*\n\n` + (lineas.length? lineas.join('\n') : 'Por ahora no hay sabores en stock.') + link;
 }
+// ---------- Catálogo online ----------
+const catalogoURL = () => location.origin + location.pathname.replace(/[^/]*$/,'') + 'catalogo.html';
+const catalogoActivo = () => !!(S.catalogo && S.catalogo.activo!==false && S.catalogo.telefono && !S.catErr);
+function catalogoItems(){
+  return Object.values(S.prods).map(p=>{ const st=stockOf(p.id); if(st<=0) return null;
+    const vg=variantsOf(p.id).filter(g=>g.restante>0); const precio=(vg[0]&&vg[0].precio)||Number(p.precio)||0;
+    return {id:p.id, sabor:p.sabor, emoji:frutaDe(p.sabor)||'💨', ice:esIce(p.sabor), precio, pocas:st<=2, max:st};
+  }).filter(Boolean).sort((a,b)=>a.sabor.localeCompare(b.sabor));
+}
+let catTimer=null;
+function syncCatalogo(){
+  if(S.users[S.me]?.rol!=='admin' || !S.catReady || S.catErr || !Object.values(S.ready).every(Boolean)) return;
+  if(!S.catalogo || !S.catalogo.telefono) return;            // todavía no se configuró
+  const items=catalogoItems();
+  if(JSON.stringify(items)===JSON.stringify(S.catalogo.items||[])) return;
+  clearTimeout(catTimer); catTimer=setTimeout(()=>{ S.db.doc('catalogo/actual').set({items, actualizado:Date.now()},{merge:true}).catch(err=>{ console.error(err); S.catErr=err.code||'error'; scheduleRender(); }); },1200);
+}
+function viewCatalogo(){
+  const c=S.catalogo||{}; const url=catalogoURL(); const items=catalogoItems();
+  if(S.catErr) return `<section class="panel"><h2>Catálogo online</h2><p class="note">El catálogo todavía no está habilitado en la base de datos (falta actualizar las reglas de Firebase). Avisale a Claude para que lo termine de configurar.</p></section>`;
+  return `<section class="panel"><div class="panel-head"><div><h2>Catálogo online</h2><span class="sub">Página para tus clientes con los sabores en stock. Se actualiza sola con cada venta y reposición.</span></div>
+      <span class="pill ${catalogoActivo()?'ok':'mid'}">${catalogoActivo()?'Publicado':c.telefono?'Pausado':'Sin configurar'}</span></div>
+    <div class="split"><input id="cat-url" readonly value="${esc(url)}" style="flex:1;min-width:220px"><button class="btn ghost" data-cat-copy>Copiar link</button><a class="btn ghost" href="${esc(url)}" target="_blank" rel="noopener" style="text-decoration:none">Ver catálogo</a></div>
+    <p class="sub">El link no aparece en Google y pide confirmar que es mayor de 18. Mandalo por WhatsApp o en tu lista de difusión; el mensaje de WhatsApp de la planilla ya lo incluye cuando el catálogo está publicado.</p>
+  </section>
+  <section class="panel"><h2>Configuración</h2>
+    <form class="form" id="f-cat" autocomplete="off">
+      <label>WhatsApp donde te llegan los pedidos<input id="cat-tel" required maxlength="30" placeholder="11 2345-6789" value="${esc(c.telefonoTxt||'')}"></label>
+      <label>Título<input id="cat-tit" maxlength="60" value="${esc(c.titulo||MSG_HEADER)}"></label>
+      <label style="grid-column:1/-1">Promo o aviso (opcional)<input id="cat-promo" maxlength="160" placeholder="2 por $54.000 · Envíos en CABA" value="${esc(c.promo||'')}"></label>
+      <label style="flex-direction:row;display:flex;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" id="cat-act" style="width:auto" ${c.activo!==false?'checked':''}> Catálogo visible</label>
+      <button class="btn" type="submit">Guardar y publicar</button>
+    </form>
+  </section>
+  <section class="panel"><div class="panel-head"><h2>Lo que ven tus clientes</h2><span class="sub">${items.length} sabores con stock${c.actualizado?` · actualizado ${new Date(c.actualizado).toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'})}`:''}</span></div>
+    ${items.length?`<div class="split">${items.map(i=>`<span class="pill ${i.pocas?'warn':'mid'}">${esc(i.sabor)} ${i.emoji}${i.ice?'❄️':''} · ${i.precio?money(i.precio):'sin precio'}</span>`).join('')}</div>
+    ${items.some(i=>!i.precio)?'<p class="note">Hay sabores sin precio: en el catálogo aparecen como "Consultar". Cargá el precio en Stock.</p>':''}`:'<p class="empty">No hay sabores con stock.</p>'}
+    <p class="sub">El cliente ve "Últimas unidades" cuando quedan 2 o menos, y no puede pedir más de lo que hay.</p>
+  </section>`;
+}
+
 // Normaliza un teléfono argentino al formato de WhatsApp: 549 + área (sin 0) + número (sin 15)
 function waNumber(raw){
   let d=String(raw||'').replace(/\D/g,'');
@@ -283,6 +325,7 @@ function render(){
   bindApp();
   if(openDetails){ const d=document.getElementById('msg-det'); if(d) d.open=true; }
   if(active){ const el=document.getElementById(active); if(el && el.tagName!=='BUTTON' && el.tagName!=='A') el.focus(); }
+  syncCatalogo();
 }
 function screen(msg, logout){
   return `<div class="auth"><div class="auth-card"><div class="brand"><div class="brand-mark">CV</div><h1>Control Vapes</h1></div><p>${msg}</p>${logout?'<button class="btn ghost" id="logout">Salir</button>':''}</div></div>`;
@@ -315,11 +358,11 @@ function viewLogin(){
 function viewShell(allReady){
   const me=S.users[S.me]; const admin=me?.rol==='admin';
   const tabs=[['resumen','Resumen'],['ventas','Ventas'],['stock','Stock'],['clientes','Clientes'],['compras','Compras'],['fiado','Fiado'],['sabores','Clientes × sabor']];
-  if(admin) tabs.push(['usuarios','Usuarios']);
+  if(admin) tabs.push(['catalogo','Catálogo'],['usuarios','Usuarios']);
   tabs.push(['cuenta','Mi cuenta']);
   if(!tabs.some(t=>t[0]===S.tab)) S.tab='resumen';
   const body = !allReady ? `<div class="panel"><p class="empty">Cargando datos…</p></div>` :
-    ({resumen:viewResumen, ventas:viewVentas, stock:viewStock, clientes:viewClientes, compras:viewCompras, fiado:viewFiado, sabores:viewMatrix, usuarios:viewUsuarios, cuenta:viewCuenta})[S.tab]();
+    ({resumen:viewResumen, ventas:viewVentas, stock:viewStock, clientes:viewClientes, compras:viewCompras, fiado:viewFiado, sabores:viewMatrix, usuarios:viewUsuarios, catalogo:viewCatalogo, cuenta:viewCuenta})[S.tab]();
   return `<header class="top"><div class="top-in">
       <div class="top-row"><div class="brand"><div class="brand-mark">CV</div><h1>Control Vapes</h1></div>
         <div class="who"><span><b>${esc(me?.nombre||me?.usuario||'')}</b> · ${admin?'Administrador':'Vendedor'}</span><button class="btn ghost sm" id="logout">Salir</button></div></div>
@@ -630,6 +673,11 @@ function bindApp(){
   q('[data-cobrar-v]',b=>b.onclick=()=>{ const v=S.ventas[b.dataset.cobrarV]; save(()=>S.db.doc('ventas/'+v.id).update({medio:S.cobroMedio, fiado:true, cobrado:today(), cobradoPor:S.me}), `Cobrado ${money(ventaTotal(v))} en ${S.cobroMedio}`); });
   const ps=document.getElementById('ped-sem'); if(ps) ps.onchange=()=>{ S.pedSem=Number(ps.value)||2; ssSet('cv_pedsem',String(S.pedSem)); render(); };
   q('[data-ped-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(textoPedido(pedido())); toast('Pedido copiado'); }catch(e){ toast('No se pudo copiar'); } });
+  q('[data-cat-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(catalogoURL()); toast('Link copiado'); }catch(e){ toast('No se pudo copiar'); } });
+  const fcat=document.getElementById('f-cat');
+  if(fcat) fcat.onsubmit=e=>{ e.preventDefault(); const txt=document.getElementById('cat-tel').value.trim(); const num=waNumber(txt);
+    if(!num) return toast('Ese número no parece un celular válido');
+    save(()=>S.db.doc('catalogo/actual').set({telefono:num, telefonoTxt:txt, titulo:document.getElementById('cat-tit').value.trim()||MSG_HEADER, promo:document.getElementById('cat-promo').value.trim(), activo:document.getElementById('cat-act').checked, items:catalogoItems(), actualizado:Date.now()},{merge:true}), 'Catálogo publicado'); };
   q('[data-cli-goedit]',b=>b.onclick=()=>{ S.tab='clientes'; ssSet('cv_tab','clientes'); S.editCli=b.dataset.cliGoedit; render(); document.getElementById('ec-contacto')?.focus(); });
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ S.tab=b.dataset.tab; S.confirm=null; S.editCli=null; ssSet('cv_tab',S.tab); render(); window.scrollTo(0,0); });
   const per=document.getElementById('period'); if(per) per.onchange=()=>{ S.period=per.value; ssSet('cv_period',S.period); render(); };
@@ -774,7 +822,8 @@ function startData(uid){
   unsubs.push(S.db.collection('usuarios').onSnapshot(snap=>{
     const m={}; snap.docs.forEach(d=>{ m[d.id]={id:d.id, ...d.data()}; }); S.users=m;
     const first=!S.ready.usuarios; S.ready.usuarios=true;
-    if(first && m[uid]){ sub('productos','prods'); sub('clientes','clients'); sub('ventas','ventas'); sub('compras','compras'); }
+    if(first && m[uid]){ sub('productos','prods'); sub('clientes','clients'); sub('ventas','ventas'); sub('compras','compras');
+      unsubs.push(S.db.doc('catalogo/actual').onSnapshot(d=>{ S.catalogo=d.exists?d.data():null; S.catReady=true; S.catErr=null; scheduleRender(); }, err=>{ S.catErr=err.code||'error'; S.catReady=true; scheduleRender(); })); }
     scheduleRender();
   }, err=>{ S.ready.usuarios=true; S.users={}; scheduleRender(); }));
   render();

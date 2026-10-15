@@ -30,6 +30,9 @@ service cloud.firestore {
     match /compras/{id}   { allow read: if isMember(); allow write: if isAdmin(); }
     match /clientes/{id}  { allow read, create: if isMember(); allow update, delete: if isAdmin(); }
 
+    // Catálogo online: lo lee cualquiera con el link, solo el administrador lo escribe
+    match /catalogo/{id} { allow read: if true; allow write: if isAdmin(); }
+
     match /ventas/{id} {
       allow read: if isMember();
       allow create: if isMember() && request.resource.data.vendedor == request.auth.uid;
