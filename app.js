@@ -1,9 +1,10 @@
 
 (() => {
 const $app = document.getElementById('app');
-const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{}, bulkSel:null, bulk:null };
+const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{}, bulkSel:null, bulk:null, cobroMedio:'Efectivo', pedSem:2 };
 const newLine = () => ({prod:'', cant:'1', precio:''});
-const MEDIOS = ['Efectivo','Transferencia','Mercado Pago'];
+const MEDIOS = ['Efectivo','Transferencia','Mercado Pago','Fiado'];
+const COBRO_MEDIOS = ['Efectivo','Transferencia','Mercado Pago'];
 const ars = new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0});
 const n0 = new Intl.NumberFormat('es-AR');
 const money = v => ars.format(v||0);
@@ -18,6 +19,7 @@ const ssGet = k => { try { return localStorage.getItem(k); } catch(e){ return nu
 const ssSet = (k,v) => { try { v==null ? localStorage.removeItem(k) : localStorage.setItem(k,v); } catch(e){} };
 S.tab = ssGet('cv_tab') || 'resumen';
 S.period = ssGet('cv_period') || 'mes';
+S.pedSem = Number(ssGet('cv_pedsem'))||2;
 
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2600); }
 
@@ -124,6 +126,78 @@ function viewBulk(){
     :`<p class="empty">Ningún cliente tiene teléfono cargado todavía. Cargalo con "Editar" en la tabla de abajo.</p>`}
   </section>`;
 }
+// ---------- Fiado ----------
+const esFiado = v => v.medio==='Fiado';
+function deudas(){
+  const m={};
+  for(const v of Object.values(S.ventas)){ if(!esFiado(v)) continue;
+    const o=m[v.clienteId]=m[v.clienteId]||{cid:v.clienteId, total:0, ventas:[], desde:null};
+    o.total+=ventaTotal(v); o.ventas.push(v); if(!o.desde || (v.fecha||'')<o.desde) o.desde=v.fecha; }
+  return Object.values(m).map(o=>({...o, dias: o.desde? daysBetween(o.desde,today()) : 0, ventas:o.ventas.sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||''))})).sort((a,b)=>b.total-a.total);
+}
+const totalDeuda = () => deudas().reduce((a,o)=>a+o.total,0);
+function msgCobro(o){
+  const c=S.clients[o.cid]; const nom=(c?.nombre||'').split(' ')[0];
+  const det=o.ventas.map(v=>`• ${fmtDate(v.fecha)} — ${v.cantidad} × ${prodName(v.productoId)} (${money(ventaTotal(v))})`).join('\n');
+  return `Hola ${nom}! 👋 Te paso el resumen de lo que quedó pendiente:\n\n${det}\n\n*Total: ${money(o.total)}*\n\nAvisame cuando puedas pagarlo. ¡Gracias! 🙌`;
+}
+function viewFiado(){
+  const admin=S.users[S.me]?.rol==='admin';
+  const ds=deudas(); const tot=ds.reduce((a,o)=>a+o.total,0);
+  return `<section class="kpis">
+    <div class="kpi"><span class="l">Te deben</span><span class="v num" style="color:${tot?'var(--bad)':'inherit'}">${money(tot)}</span><span class="h">${ds.length} cliente${ds.length===1?'':'s'}</span></div>
+    <div class="kpi"><span class="l">Deuda más vieja</span><span class="v num">${ds.length?Math.max(...ds.map(o=>o.dias))+' días':'—'}</span><span class="h">desde la venta</span></div>
+  </section>
+  <section class="panel"><div class="panel-head"><div><h2>Fiado</h2><span class="sub">Ventas cargadas con medio de pago "Fiado". Cuando te pagan, tocá Cobrar.</span></div>
+    ${admin&&ds.length?`<label style="flex-direction:row;display:flex;align-items:center;gap:8px">Cobrar como<select id="cobro-medio" style="width:auto">${COBRO_MEDIOS.map(m=>`<option ${S.cobroMedio===m?'selected':''}>${m}</option>`).join('')}</select></label>`:''}</div>
+  ${ds.length?ds.map(o=>{const c=S.clients[o.cid]; const num=waNumber(c?.contacto);
+    return `<div class="panel" style="padding:14px;gap:10px;background:var(--surface-2);border-color:transparent">
+      <div class="panel-head"><div><b style="font-size:16px">${esc(clientName(o.cid))}</b> <span class="pill ${o.dias>14?'bad':o.dias>7?'warn':'mid'}">${o.dias} días</span></div>
+        <div class="split"><b class="num" style="font-size:18px">${money(o.total)}</b>
+        ${num?`<a class="wa" href="${esc(`https://api.whatsapp.com/send?phone=${num}&text=${encodeURIComponent(msgCobro(o))}`)}" target="_blank" rel="noopener">${WA_ICON}Recordar</a>`:'<span class="sub">Sin teléfono</span>'}
+        ${admin?(S.confirm==='cobrar/'+o.cid?`<span class="inline-confirm">¿Cobrar todo en ${esc(S.cobroMedio)}? <button class="btn sm" data-cobrar-yes="${o.cid}">Sí</button><button class="btn ghost sm" data-del-no>No</button></span>`:`<button class="btn sm" data-cobrar="${o.cid}">Cobrar todo</button>`):''}</div></div>
+      <div class="tbl-wrap"><table><tbody>${o.ventas.map(v=>`<tr><td class="num">${fmtDate(v.fecha)}</td><td>${v.cantidad} × ${esc(prodName(v.productoId))}</td><td class="r num">${money(ventaTotal(v))}</td><td class="sub">${esc(userName(v.vendedor))}</td>${admin?`<td class="r"><button class="btn ghost sm" data-cobrar-v="${v.id}">Cobrar</button></td>`:''}</tr>`).join('')}</tbody></table></div>
+    </div>`}).join('')
+  :`<p class="empty">Nadie te debe nada. Para fiar, cargá la venta con medio de pago "Fiado".</p>`}
+  ${admin?'':'<p class="note">Solo el administrador puede registrar los cobros.</p>'}
+  </section>`;
+}
+
+// ---------- Pedido sugerido ----------
+function pedido(){
+  const sem=S.pedSem||2; const t=today();
+  return Object.values(S.prods).map(p=>{
+    const v30=Object.values(S.ventas).filter(v=>v.productoId===p.id && v.fecha && daysBetween(v.fecha,t)>=0 && daysBetween(v.fecha,t)<30).reduce((a,v)=>a+(Number(v.cantidad)||0),0);
+    const vTot=Object.values(S.ventas).filter(v=>v.productoId===p.id).reduce((a,v)=>a+(Number(v.cantidad)||0),0);
+    const porSem=v30/30*7; const st=Math.max(0,stockOf(p.id)); const min=Number(p.stockMin)||0;
+    const dias = porSem>0 ? Math.floor(st/(porSem/7)) : null;
+    let sug = Math.ceil(porSem*sem + min - st);
+    if(porSem===0) sug = vTot>0 ? Math.max(0, min-st) : 0;
+    sug=Math.max(0,sug);
+    return {p, v30, porSem, st, dias, sug, costo:Number(p.costo)||0};
+  }).sort((a,b)=>b.sug-a.sug || b.porSem-a.porSem);
+}
+function textoPedido(rows){
+  const r=rows.filter(x=>x.sug>0);
+  return `Pedido ELF BAR ICE KING 40K\n\n${r.map(x=>`• ${x.p.sabor} x ${x.sug}`).join('\n')}\n\nTotal: ${r.reduce((a,x)=>a+x.sug,0)} unidades`;
+}
+function viewPedido(){
+  const rows=pedido(); const conSug=rows.filter(x=>x.sug>0);
+  const uni=conSug.reduce((a,x)=>a+x.sug,0); const cst=conSug.reduce((a,x)=>a+x.sug*x.costo,0);
+  return `<section class="panel"><div class="panel-head"><div><h2>Pedido sugerido</h2><span class="sub">Según lo que se vendió de cada sabor en los últimos 30 días</span></div>
+    <label style="flex-direction:row;display:flex;align-items:center;gap:8px">Que alcance para<select id="ped-sem" style="width:auto">${[1,2,3,4].map(n=>`<option value="${n}" ${S.pedSem===n?'selected':''}>${n} semana${n>1?'s':''}</option>`).join('')}</select></label></div>
+  ${rows.length?`<div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th class="r">Vendidas 30 d</th><th class="r">Por semana</th><th class="r">Stock</th><th>Alcanza para</th><th class="r">Pedir</th></tr></thead><tbody>
+  ${rows.map(x=>`<tr><td><b>${esc(x.p.sabor)}</b></td><td class="r num">${x.v30}</td><td class="r num">${x.porSem?x.porSem.toFixed(1):'—'}</td><td class="r num">${x.st}</td>
+    <td>${x.st<=0?'<span class="pill bad">Sin stock</span>':x.dias==null?'<span class="sub">sin ventas recientes</span>':`<span class="pill ${x.dias<7?'bad':x.dias<14?'warn':'ok'}">${x.dias} días</span>`}</td>
+    <td class="r num"><b style="font-size:16px;color:${x.sug?'var(--accent)':'var(--muted)'}">${x.sug||'—'}</b></td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="panel-head"><span><b class="num">${uni}</b> unidades a pedir${cst?` · costo estimado <b class="num">${money(cst)}</b>`:''}</span>
+    <button class="btn" data-ped-copy ${uni?'':'disabled'}>Copiar pedido</button></div>
+  <p class="sub">"Pedir" = lo que se vende por semana × las semanas elegidas + el stock mínimo − el stock actual. "Copiar pedido" arma el texto para mandárselo al proveedor.</p>`
+  :`<p class="empty">Todavía no hay sabores cargados.</p>`}
+  </section>`;
+}
+
 function waBtn(c){
   const num=waNumber(c?.contacto); if(!num) return '';
   const href=`https://api.whatsapp.com/send?phone=${num}&text=${encodeURIComponent(mensajeStock())}`;
@@ -214,12 +288,12 @@ function viewLogin(){
 
 function viewShell(allReady){
   const me=S.users[S.me]; const admin=me?.rol==='admin';
-  const tabs=[['resumen','Resumen'],['ventas','Ventas'],['stock','Stock'],['clientes','Clientes'],['compras','Compras'],['sabores','Clientes × sabor']];
+  const tabs=[['resumen','Resumen'],['ventas','Ventas'],['stock','Stock'],['clientes','Clientes'],['compras','Compras'],['fiado','Fiado'],['sabores','Clientes × sabor']];
   if(admin) tabs.push(['usuarios','Usuarios']);
   tabs.push(['cuenta','Mi cuenta']);
   if(!tabs.some(t=>t[0]===S.tab)) S.tab='resumen';
   const body = !allReady ? `<div class="panel"><p class="empty">Cargando datos…</p></div>` :
-    ({resumen:viewResumen, ventas:viewVentas, stock:viewStock, clientes:viewClientes, compras:viewCompras, sabores:viewMatrix, usuarios:viewUsuarios, cuenta:viewCuenta})[S.tab]();
+    ({resumen:viewResumen, ventas:viewVentas, stock:viewStock, clientes:viewClientes, compras:viewCompras, fiado:viewFiado, sabores:viewMatrix, usuarios:viewUsuarios, cuenta:viewCuenta})[S.tab]();
   return `<header class="top"><div class="top-in">
       <div class="top-row"><div class="brand"><div class="brand-mark">CV</div><h1>Control Vapes</h1></div>
         <div class="who"><span><b>${esc(me?.nombre||me?.usuario||'')}</b> · ${admin?'Administrador':'Vendedor'}</span><button class="btn ghost sm" id="logout">Salir</button></div></div>
@@ -279,6 +353,7 @@ function viewResumen(){
     <div class="kpi"><span class="l">Ganancia</span><span class="v num">${money(gan)}</span><span class="h">${sinCosto?'Faltan costos en algunos sabores':(total?`Margen ${Math.round(gan/total*100)}%`:'—')}</span></div>
     <div class="kpi"><span class="l">Clientes que compraron</span><span class="v num">${clientesPer}</span><span class="h">${Object.keys(S.clients).length} en total</span></div>
     <div class="kpi"><span class="l">Stock disponible</span><span class="v num">${n0.format(stockTot)}</span><span class="h">${valorStock?`Vale ${money(valorStock)} a precio de venta`:'Cargá precios en Stock'}</span></div>
+    <div class="kpi"><span class="l">Te deben (fiado)</span><span class="v num" style="color:${totalDeuda()?'var(--bad)':'inherit'}">${money(totalDeuda())}</span><span class="h">${deudas().length} cliente${deudas().length===1?'':'s'} · ver pestaña Fiado</span></div>
     <div class="kpi"><span class="l">Sabores a reponer</span><span class="v num" style="color:${reponer?'var(--warn)':'inherit'}">${reponer}</span><span class="h">Stock en el mínimo o debajo</span></div>
   </section>
   <div class="grid2">
@@ -334,7 +409,7 @@ function viewVentas(){
   </form></section>
   <section class="panel"><div class="panel-head"><div><h2>Ventas</h2><span class="sub num">${list.length} ventas · ${money(tot)}</span></div>${periodSelect()}</div>
   ${list.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Sabor</th><th class="r">Cant.</th><th class="r">Precio u.</th><th class="r">Total</th><th>Pago</th><th>Vendedor</th><th></th></tr></thead><tbody>
-  ${list.map(v=>`<tr><td class="num">${fmtDate(v.fecha)}</td><td>${esc(clientName(v.clienteId))}</td><td>${esc(prodName(v.productoId))}</td><td class="r num">${v.cantidad}</td><td class="r num">${money(v.precioUnit)}</td><td class="r num">${money(ventaTotal(v))}</td><td>${esc(v.medio||'')}</td><td>${esc(userName(v.vendedor))}</td>
+  ${list.map(v=>`<tr><td class="num">${fmtDate(v.fecha)}</td><td>${esc(clientName(v.clienteId))}</td><td>${esc(prodName(v.productoId))}</td><td class="r num">${v.cantidad}</td><td class="r num">${money(v.precioUnit)}</td><td class="r num">${money(ventaTotal(v))}</td><td>${esFiado(v)?'<span class="pill bad">Debe</span>':esc(v.medio||'')+(v.cobrado?' <span class="sub">(fiado, cobrado '+fmtDate(v.cobrado)+')</span>':'')}</td><td>${esc(userName(v.vendedor))}</td>
   <td class="r">${(admin||v.vendedor===S.me)? delBtn('ventas',v.id) : ''}</td></tr>`).join('')}</tbody></table></div>`:`<p class="empty">No hay ventas en este período. Cargá la primera arriba.</p>`}
   </section>`;
 }
@@ -360,6 +435,7 @@ function viewStock(){
     <label>Stock mínimo<input id="p-min" type="number" min="0" value="2"></label>
     <button class="btn" type="submit">Agregar</button>
   </form></section>`:''}
+  ${viewPedido()}
   <section class="panel"><div class="panel-head"><h2>Stock por sabor</h2><span class="sub">Stock actual = inicial + compras − ventas</span></div>
   ${prods.length?`<div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th>Modelo</th><th class="r">Costo</th><th class="r">Precio</th><th class="r">Vendidas</th><th class="r">Stock</th><th>Por precio</th><th>Estado</th>${admin?'<th></th>':''}</tr></thead><tbody>
   ${prods.map(p=>{const s=stockOf(p.id); const st= s<=0?['Sin stock','bad']: s<=(Number(p.stockMin)||0)?['Reponer','warn']:['OK','ok'];
@@ -515,6 +591,13 @@ function bindApp(){
   q('[data-bulk-skip]',b=>b.onclick=()=>{ S.bulk.i++; render(); });
   q('[data-bulk-end]',b=>b.onclick=()=>{ S.bulk=null; S.bulkSel=null; render(); });
   q('[data-bulk-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(mensajeStock()); toast('Mensaje copiado'); }catch(e){ toast('No se pudo copiar'); } });
+  const cm=document.getElementById('cobro-medio'); if(cm) cm.onchange=()=>{ S.cobroMedio=cm.value; };
+  q('[data-cobrar]',b=>b.onclick=()=>{ S.confirm='cobrar/'+b.dataset.cobrar; render(); });
+  q('[data-cobrar-yes]',b=>b.onclick=async()=>{ const cid=b.dataset.cobrarYes; S.confirm=null; const vs=Object.values(S.ventas).filter(v=>v.clienteId===cid&&esFiado(v));
+    await save(async()=>{ const bt=S.db.batch(); vs.forEach(v=>bt.update(S.db.doc('ventas/'+v.id),{medio:S.cobroMedio, fiado:true, cobrado:today(), cobradoPor:S.me})); await bt.commit(); }, `Cobrado: ${money(vs.reduce((a,v)=>a+ventaTotal(v),0))} de ${clientName(cid)}`); render(); });
+  q('[data-cobrar-v]',b=>b.onclick=()=>{ const v=S.ventas[b.dataset.cobrarV]; save(()=>S.db.doc('ventas/'+v.id).update({medio:S.cobroMedio, fiado:true, cobrado:today(), cobradoPor:S.me}), `Cobrado ${money(ventaTotal(v))} en ${S.cobroMedio}`); });
+  const ps=document.getElementById('ped-sem'); if(ps) ps.onchange=()=>{ S.pedSem=Number(ps.value)||2; ssSet('cv_pedsem',String(S.pedSem)); render(); };
+  q('[data-ped-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(textoPedido(pedido())); toast('Pedido copiado'); }catch(e){ toast('No se pudo copiar'); } });
   q('[data-cli-goedit]',b=>b.onclick=()=>{ S.tab='clientes'; ssSet('cv_tab','clientes'); S.editCli=b.dataset.cliGoedit; render(); document.getElementById('ec-contacto')?.focus(); });
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ S.tab=b.dataset.tab; S.confirm=null; S.editCli=null; ssSet('cv_tab',S.tab); render(); window.scrollTo(0,0); });
   const per=document.getElementById('period'); if(per) per.onchange=()=>{ S.period=per.value; ssSet('cv_period',S.period); render(); };
