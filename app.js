@@ -1,7 +1,7 @@
 
 (() => {
 const $app = document.getElementById('app');
-const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{}, bulkSel:null, bulk:null, cobroMedio:'Efectivo', pedSem:2 };
+const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{}, bulkSel:null, bulk:null, cobroMedio:'Efectivo', pedSem:2, kf:{}, blue:null };
 const newLine = () => ({prod:'', cant:'1', precio:''});
 const MEDIOS = ['Efectivo','Transferencia','Mercado Pago','Fiado'];
 const COBRO_MEDIOS = ['Efectivo','Transferencia','Mercado Pago'];
@@ -20,6 +20,7 @@ const ssSet = (k,v) => { try { v==null ? localStorage.removeItem(k) : localStora
 S.tab = ssGet('cv_tab') || 'resumen';
 S.period = ssGet('cv_period') || 'mes';
 S.pedSem = Number(ssGet('cv_pedsem'))||2;
+S.kf = {mon: ssGet('cv_kmon')||'USD'};
 
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2600); }
 
@@ -546,24 +547,49 @@ function viewClientes(){
   </section>`;
 }
 
+// ---------- Dólar blue (misma cotización que DolarHoy, vía dolarapi.com) ----------
+const usd = v => 'US$ ' + new Intl.NumberFormat('es-AR',{maximumFractionDigits:2}).format(v||0);
+async function cargarBlue(force){
+  if(S.bluePend || (!force && (S.blueErr || (S.blue && Date.now()-S.blue.cargado < 10*60*1000)))) return;
+  S.blueErr=null; S.bluePend=true;
+  try{ const r=await fetch('https://dolarapi.com/v1/dolares/blue',{cache:'no-store'}); if(!r.ok) throw new Error(r.status);
+    const d=await r.json(); const compra=Number(d.compra), venta=Number(d.venta);
+    if(!(compra>0&&venta>0)) throw new Error('sin datos');
+    S.blue={compra, venta, prom:Math.round((compra+venta)/2), fecha:d.fechaActualizacion, cargado:Date.now()};
+  }catch(e){ console.error(e); S.blueErr='No se pudo traer la cotización. Escribila a mano.'; }
+  S.bluePend=false; scheduleRender();
+}
+const tcUsado = () => Number(S.kf.tc)||S.blue?.prom||0;
+
 function viewCompras(){
   const admin=S.users[S.me]?.rol==='admin';
   const prods=Object.values(S.prods).sort((a,b)=>a.sabor.localeCompare(b.sabor));
   const list=Object.values(S.compras).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')||(b.creado||0)-(a.creado||0));
   const inv=list.reduce((a,c)=>a+(Number(c.cantidad)||0)*(Number(c.costoUnit)||0),0);
+  const invUsd=list.reduce((a,c)=>a+(Number(c.cantidad)||0)*(Number(c.costoUSD)||0),0);
+  if(admin && S.kf.mon!=='ARS') cargarBlue();
   return `
   <section class="panel"><div class="panel-head"><h2>Registrar reposición</h2><span class="sub">Suma al stock del sabor. Si el costo o precio es distinto, queda separado</span></div>
   ${admin?`<form class="form" id="f-compra" autocomplete="off">
-    <label>Fecha<input type="date" id="k-fecha" value="${today()}" required></label>
-    <label>Sabor<select id="k-prod" required><option value="">Elegí…</option>${prods.map(p=>`<option value="${p.id}">${esc(p.sabor)}</option>`).join('')}</select></label>
-    <label>Cantidad<input type="number" id="k-cant" min="1" value="1" required></label>
-    <label>Costo unitario<input type="number" id="k-costo" min="0" placeholder="$"></label>
-    <label>Precio de venta<input type="number" id="k-precio" min="0" placeholder="$"></label>
+    <label>Fecha<input type="date" id="k-fecha" value="${esc(S.kf.fecha||today())}" required></label>
+    <label>Sabor<select id="k-prod" required><option value="">Elegí…</option>${prods.map(p=>`<option value="${p.id}" ${S.kf.prod===p.id?'selected':''}>${esc(p.sabor)}</option>`).join('')}</select></label>
+    <label>Cantidad<input type="number" id="k-cant" min="1" value="${esc(S.kf.cant||'1')}" required></label>
+    <label>Pagado en<select id="k-mon"><option value="USD" ${S.kf.mon!=='ARS'?'selected':''}>Dólares (US$)</option><option value="ARS" ${S.kf.mon==='ARS'?'selected':''}>Pesos ($)</option></select></label>
+    ${S.kf.mon!=='ARS'
+      ? `<label>Costo unitario en US$<input type="number" id="k-usd" min="0" step="0.01" placeholder="US$" value="${esc(S.kf.usd||'')}"></label>
+         <label>Dólar blue (promedio)<input type="number" id="k-tc" min="0" step="1" placeholder="${S.blue?S.blue.prom:'$'}" value="${esc(S.kf.tc||'')}"></label>`
+      : `<label>Costo unitario<input type="number" id="k-costo" min="0" placeholder="$" value="${esc(S.kf.costo||'')}"></label>`}
+    <label>Precio de venta<input type="number" id="k-precio" min="0" placeholder="$" value="${esc(S.kf.precio||'')}"></label>
     <button class="btn" type="submit">Guardar compra</button>
-  </form>`:`<p class="note">Solo el administrador registra compras de mercadería.</p>`}</section>
-  <section class="panel"><div class="panel-head"><div><h2>Compras</h2><span class="sub num">Invertido: ${money(inv)}</span></div></div>
+  </form>
+  ${S.kf.mon!=='ARS'?`<div class="note" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+    <span>${S.blue?`Dólar blue hoy: compra <b>${money(S.blue.compra)}</b> · venta <b>${money(S.blue.venta)}</b> → promedio <b>${money(S.blue.prom)}</b>${S.blue.fecha?` <span class="sub">(act. ${new Date(S.blue.fecha).toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'})})</span>`:''}`:(S.blueErr||'Buscando cotización del dólar blue…')}
+      ${Number(S.kf.usd)>0&&tcUsado()?`<br>Costo en pesos: <b class="num">${usd(Number(S.kf.usd))} × ${money(tcUsado())} = ${money(Math.round(Number(S.kf.usd)*tcUsado()))}</b> por unidad${Number(S.kf.cant)>1?` · total <b class="num">${money(Math.round(Number(S.kf.usd)*tcUsado()*Number(S.kf.cant)))}</b>`:''}`:''}</span>
+    <button type="button" class="btn ghost sm" data-blue-refresh>Actualizar cotización</button></div>
+    <p class="sub">La cotización es el promedio entre compra y venta del blue (la misma que muestra DolarHoy). Si pagaste a otro valor, escribilo en "Dólar blue". Queda guardada en cada compra.</p>`:''}`:`<p class="note">Solo el administrador registra compras de mercadería.</p>`}</section>
+  <section class="panel"><div class="panel-head"><div><h2>Compras</h2><span class="sub num">Invertido: ${money(inv)}${invUsd?` · ${usd(invUsd)} en compras en dólares`:''}</span></div></div>
   ${list.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Sabor</th><th class="r">Cant.</th><th class="r">Costo u.</th><th class="r">Precio u.</th><th class="r">Total</th><th>Cargó</th>${admin?'<th></th>':''}</tr></thead><tbody>
-  ${list.map(c=>`<tr><td class="num">${fmtDate(c.fecha)}</td><td>${esc(prodName(c.productoId))}</td><td class="r num">${c.cantidad}</td><td class="r">${admin?cInput(c,'costoUnit'):money(c.costoUnit)}</td><td class="r">${admin?cInput(c,'precioUnit'):money(c.precioUnit!=null?c.precioUnit:S.prods[c.productoId]?.precio)}</td><td class="r num">${money((c.cantidad||0)*(c.costoUnit||0))}</td><td>${esc(userName(c.vendedor))}</td>${admin?`<td class="r">${delBtn('compras',c.id)}</td>`:''}</tr>`).join('')}
+  ${list.map(c=>`<tr><td class="num">${fmtDate(c.fecha)}</td><td>${esc(prodName(c.productoId))}</td><td class="r num">${c.cantidad}</td><td class="r">${admin?cInput(c,'costoUnit'):money(c.costoUnit)}${c.costoUSD?`<br><span class="sub num" style="white-space:nowrap">${usd(c.costoUSD)} × ${money(c.tc)}</span>`:''}</td><td class="r">${admin?cInput(c,'precioUnit'):money(c.precioUnit!=null?c.precioUnit:S.prods[c.productoId]?.precio)}</td><td class="r num">${money((c.cantidad||0)*(c.costoUnit||0))}</td><td>${esc(userName(c.vendedor))}</td>${admin?`<td class="r">${delBtn('compras',c.id)}</td>`:''}</tr>`).join('')}
   </tbody></table></div>`:`<p class="empty">Sin reposiciones registradas.</p>`}</section>`;
 }
 
@@ -767,14 +793,26 @@ function bindApp(){
   const fk=document.getElementById('f-compra');
   if(fk) fk.onsubmit=e=>{ e.preventDefault(); const pid=document.getElementById('k-prod').value; const cant=parseInt(document.getElementById('k-cant').value,10);
     if(!pid||!(cant>0)) return toast('Elegí sabor y cantidad');
-    const p=S.prods[pid]; const kc=document.getElementById('k-costo').value, kp=document.getElementById('k-precio').value;
-    const costo=kc!==''?Number(kc)||0:Number(p?.costo)||0, precio=kp!==''?Number(kp)||0:Number(p?.precio)||0;
+    const p=S.prods[pid]; const kp=document.getElementById('k-precio').value; const enUsd=S.kf.mon!=='ARS';
+    const kc=enUsd?'':document.getElementById('k-costo').value;
+    let costo=kc!==''?Number(kc)||0:Number(p?.costo)||0; const precio=kp!==''?Number(kp)||0:Number(p?.precio)||0;
+    const extra={};
+    if(enUsd){ const u=Number(document.getElementById('k-usd').value)||0; const tc=tcUsado();
+      if(!(u>0)) return toast('Poné el costo en dólares'); if(!(tc>0)) return toast('Falta la cotización del dólar');
+      costo=Math.round(u*tc); Object.assign(extra,{moneda:'USD', costoUSD:u, tc, tcFuente: Number(S.kf.tc)?'manual':'blue promedio (DolarHoy)'}); }
     const otros=variantsOf(pid).filter(g=>g.restante>0&&(g.costo!==costo||g.precio!==precio));
-    save(()=>S.db.collection('compras').add({fecha:document.getElementById('k-fecha').value, productoId:pid, cantidad:cant, costoUnit:costo, precioUnit:precio, vendedor:S.me, creado:Date.now()}),
+    save(()=>S.db.collection('compras').add({fecha:document.getElementById('k-fecha').value, productoId:pid, cantidad:cant, costoUnit:costo, precioUnit:precio, ...extra, vendedor:S.me, creado:Date.now()}).then(()=>{ S.kf={mon:S.kf.mon, tc:S.kf.tc, fecha:S.kf.fecha}; render(); }),
       `Sumadas ${cant} de ${prodName(pid)}`+(otros.length?' · quedan separadas por tener otro costo/precio':'')); };
   const kprod=document.getElementById('k-prod');
-  if(kprod) kprod.onchange=()=>{ const ls=lotsOf(kprod.value); const last=ls[ls.length-1]; if(!last) return;
-    const kc=document.getElementById('k-costo'), kp=document.getElementById('k-precio'); if(last.costo) kc.value=last.costo; if(last.precio) kp.value=last.precio; };
+  if(kprod) kprod.onchange=()=>{ S.kf.prod=kprod.value; const ls=lotsOf(kprod.value); const last=ls[ls.length-1]; if(!last) return;
+    const lastC=Object.values(S.compras).filter(c=>c.productoId===kprod.value&&c.costoUSD).sort((a,b)=>(b.creado||0)-(a.creado||0))[0];
+    if(last.precio) S.kf.precio=String(last.precio);
+    if(S.kf.mon==='ARS'){ if(last.costo) S.kf.costo=String(last.costo); } else if(lastC) S.kf.usd=String(lastC.costoUSD);
+    render(); };
+  [['k-fecha','fecha'],['k-cant','cant'],['k-usd','usd'],['k-tc','tc'],['k-costo','costo'],['k-precio','precio']].forEach(([id,k])=>{ const el=document.getElementById(id); if(el) el.oninput=()=>{ S.kf[k]=el.value;
+    if(k==='usd'||k==='tc'||k==='cant'){ clearTimeout(S._kt); S._kt=setTimeout(()=>{ const a=document.activeElement?.id, pos=document.activeElement?.selectionStart; render(); const e2=document.getElementById(a); if(e2){ e2.focus(); } },500); } }; });
+  const kmon=document.getElementById('k-mon'); if(kmon) kmon.onchange=()=>{ S.kf.mon=kmon.value; ssSet('cv_kmon',kmon.value); render(); };
+  q('[data-blue-refresh]',b=>b.onclick=()=>{ S.kf.tc=''; cargarBlue(true); toast('Actualizando cotización…'); });
   document.querySelectorAll('[data-cedit]').forEach(inp=>inp.onchange=()=>{ const id=inp.dataset.cedit, f=inp.dataset.f; const val=Number(inp.value)||0;
     if(S.compras[id] && S.compras[id][f]!=null && (Number(S.compras[id][f])||0)===val) return;
     save(()=>S.db.doc('compras/'+id).update({[f]:val}), f==='costoUnit'?'Costo actualizado':'Precio actualizado'); });
