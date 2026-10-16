@@ -1,10 +1,10 @@
 
 (() => {
 const $app = document.getElementById('app');
-const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{}, bulkSel:null, bulk:null, cobroMedio:'Efectivo', pedSem:2, kf:{}, blue:null };
+const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{}, bulkSel:null, bulk:null, cobroMedio:'Mercado Pago', pedSem:2, kf:{}, blue:null };
 const newLine = () => ({prod:'', cant:'1', precio:''});
-const MEDIOS = ['Efectivo','Transferencia','Mercado Pago','Fiado'];
-const COBRO_MEDIOS = ['Efectivo','Transferencia','Mercado Pago'];
+const MEDIOS = ['Mercado Pago','Fiado'];
+const COBRO_MEDIOS = ['Mercado Pago'];
 const ars = new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0});
 const n0 = new Intl.NumberFormat('es-AR');
 const money = v => ars.format(v||0);
@@ -213,7 +213,7 @@ function viewFiado(){
     <div class="kpi"><span class="l">Deuda más vieja</span><span class="v num">${ds.length?Math.max(...ds.map(o=>o.dias))+' días':'—'}</span><span class="h">desde la venta</span></div>
   </section>
   <section class="panel"><div class="panel-head"><div><h2>Fiado</h2><span class="sub">Ventas cargadas con medio de pago "Fiado". Cuando te pagan, tocá Cobrar.</span></div>
-    ${admin&&ds.length?`<label style="flex-direction:row;display:flex;align-items:center;gap:8px">Cobrar como<select id="cobro-medio" style="width:auto">${COBRO_MEDIOS.map(m=>`<option ${S.cobroMedio===m?'selected':''}>${m}</option>`).join('')}</select></label>`:''}</div>
+    ${admin&&ds.length&&COBRO_MEDIOS.length>1?`<label style="flex-direction:row;display:flex;align-items:center;gap:8px">Cobrar como<select id="cobro-medio" style="width:auto">${COBRO_MEDIOS.map(m=>`<option ${S.cobroMedio===m?'selected':''}>${m}</option>`).join('')}</select></label>`:''}</div>
   ${ds.length?ds.map(o=>{const c=S.clients[o.cid]; const num=waNumber(c?.contacto);
     return `<div class="panel" style="padding:14px;gap:10px;background:var(--surface-2);border-color:transparent">
       <div class="panel-head"><div><b style="font-size:16px">${esc(clientName(o.cid))}</b> <span class="pill ${o.dias>14?'bad':o.dias>7?'warn':'mid'}">${o.dias} días</span></div>
@@ -405,6 +405,8 @@ function viewVisitas(){
   const st=S.stats||{}; const dias=Object.keys(st).filter(inPeriod);
   const sum=k=>dias.reduce((a,d)=>a+(Number(st[d][k])||0),0);
   const vis=sum('visitas'), ped=sum('pedidos'), nue=sum('nuevos');
+  const vc=Object.values(S.ventas).filter(v=>v.catalogo && inPeriod(v.fecha||''));
+  const compras=new Set(vc.map(v=>v.pedidoId||v.id)).size, plataCat=vc.reduce((a,v)=>a+ventaTotal(v),0), caidos=Math.max(0,ped-compras);
   const t=today(); const last=[]; for(let i=13;i>=0;i--){ const d=new Date(dParse(t)); d.setDate(d.getDate()-i); const k=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; last.push({k, l:i===0?'hoy':String(d.getDate()), v:Number(st[k]?.visitas)||0, p:Number(st[k]?.pedidos)||0}); }
   const mx=Math.max(1,...last.map(x=>x.v));
   return `<section class="panel"><div class="panel-head"><div><h2>Catálogo</h2><span class="sub">Visitas a vapdm-ba.web.app en el período. Una visita por celular cada 3 horas</span></div></div>
@@ -412,7 +414,9 @@ function viewVisitas(){
       <div class="kpi"><span class="l">Visitas</span><span class="v num">${n0.format(vis)}</span><span class="h">Hoy: ${n0.format(Number(st[t]?.visitas)||0)}</span></div>
       <div class="kpi"><span class="l">Personas nuevas</span><span class="v num">${n0.format(nue)}</span><span class="h">Celulares que entraron por primera vez</span></div>
       <div class="kpi"><span class="l">Tocaron Pedir</span><span class="v num">${n0.format(ped)}</span><span class="h">Abrieron WhatsApp con un pedido</span></div>
-      <div class="kpi"><span class="l">Conversión</span><span class="v num">${vis?Math.round(ped/vis*100):0}%</span><span class="h">De cada 100 visitas, cuántas piden</span></div>
+      <div class="kpi"><span class="l">Compraron</span><span class="v num">${n0.format(compras)}</span><span class="h">${plataCat?`${money(plataCat)} en ventas del catálogo`:'Ventas marcadas "Vino del catálogo"'}</span></div>
+      <div class="kpi"><span class="l">No se concretaron</span><span class="v num" style="color:${caidos?'var(--warn)':'inherit'}">${n0.format(caidos)}</span><span class="h">Tocaron Pedir y no compraron</span></div>
+      <div class="kpi"><span class="l">Conversión real</span><span class="v num">${vis?Math.round(compras/vis*100):0}%</span><span class="h">De cada 100 visitas, cuántas compran</span></div>
     </div>
     <div class="months" style="height:130px">${last.map((x,i)=>`<div class="mcol ${i===13?'cur':''}" title="${fmtDate(x.k)}: ${x.v} visitas, ${x.p} pedidos"><span class="val num">${x.v||''}</span><div class="stick"><i style="height:${(x.v/mx*100).toFixed(1)}%"></i></div><span>${x.l}</span></div>`).join('')}</div>
     <p class="sub" style="margin:0">Últimos 14 días. Para que tus propias visitas no cuenten, abrí una vez <b>vapdm-ba.web.app/?nocontar</b> desde tu celular.</p>`}
@@ -503,6 +507,7 @@ function viewVentas(){
       ? `<input id="v-cli-nuevo" placeholder="Nombre del cliente nuevo" required maxlength="50" value="${esc(S.vf.cliNuevo||'')}">`
       : `<select id="v-cli" required><option value="">Elegí…</option>${clients.map(c=>`<option value="${c.id}" ${S.vf.cli===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}<option value="__new">+ Cliente nuevo</option></select>`}</label>
     <label>Medio de pago<select id="v-medio">${MEDIOS.map(m=>`<option ${S.vf.medio===m?'selected':''}>${m}</option>`).join('')}</select></label>
+    <label class="chk"><input type="checkbox" id="v-cat" ${S.vf.cat?'checked':''}> Vino del catálogo</label>
     <label>Descuento <span style="display:flex;gap:6px"><input id="v-desc" type="number" min="0" step="1" placeholder="0" value="${esc(S.vf.desc||'')}" aria-label="Descuento"><select id="v-desc-tipo" style="width:auto" aria-label="Tipo de descuento"><option value="$" ${S.vf.descTipo!=='%'?'selected':''}>$</option><option value="%" ${S.vf.descTipo==='%'?'selected':''}>%</option></select></span></label>
     </div>
     <div class="vlines">
@@ -524,7 +529,7 @@ function viewVentas(){
   </form></section>
   <section class="panel"><div class="panel-head"><div><h2>Ventas</h2><span class="sub num">${list.length} ventas · ${money(tot)}</span></div>${periodSelect()}</div>
   ${list.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Sabor</th><th class="r">Cant.</th><th class="r">Precio u.</th><th class="r">Total</th><th>Pago</th><th>Vendedor</th><th></th></tr></thead><tbody>
-  ${list.map(v=>`<tr><td class="num">${fmtDate(v.fecha)}</td><td>${esc(clientName(v.clienteId))}</td><td>${flDot(prodName(v.productoId))}${esc(prodName(v.productoId))}</td><td class="r num">${v.cantidad}</td><td class="r num">${money(v.precioUnit)}</td><td class="r num">${money(ventaTotal(v))}${Number(v.descuento)?`<br><span class="sub" title="Precio de lista ${money(ventaBruto(v))}">−${money(v.descuento)} desc.</span>`:''}</td><td>${esFiado(v)?'<span class="pill bad">Debe</span>':esc(v.medio||'')+(v.cobrado?' <span class="sub">(fiado, cobrado '+fmtDate(v.cobrado)+')</span>':'')}</td><td>${esc(userName(v.vendedor))}</td>
+  ${list.map(v=>`<tr><td class="num">${fmtDate(v.fecha)}</td><td>${esc(clientName(v.clienteId))}</td><td>${flDot(prodName(v.productoId))}${esc(prodName(v.productoId))}${v.catalogo?' <span class="pill mid">Catálogo</span>':''}</td><td class="r num">${v.cantidad}</td><td class="r num">${money(v.precioUnit)}</td><td class="r num">${money(ventaTotal(v))}${Number(v.descuento)?`<br><span class="sub" title="Precio de lista ${money(ventaBruto(v))}">−${money(v.descuento)} desc.</span>`:''}</td><td>${esFiado(v)?'<span class="pill bad">Debe</span>':esc(v.medio||'')+(v.cobrado?' <span class="sub">(fiado, cobrado '+fmtDate(v.cobrado)+')</span>':'')}</td><td>${esc(userName(v.vendedor))}</td>
   <td class="r">${(admin||v.vendedor===S.me)? delBtn('ventas',v.id) : ''}</td></tr>`).join('')}</tbody></table></div>`:`<p class="empty">No hay ventas en este período. Cargá la primera arriba.</p>`}
   </section>`;
 }
@@ -979,6 +984,7 @@ function bindApp(){
   const vcn=document.getElementById('v-cli-nuevo'); if(vcn) vcn.oninput=()=>S.vf.cliNuevo=vcn.value;
   const vfe=document.getElementById('v-fecha'); if(vfe) vfe.onchange=()=>S.vf.fecha=vfe.value;
   const vme=document.getElementById('v-medio'); if(vme) vme.onchange=()=>S.vf.medio=vme.value;
+  const vcat=document.getElementById('v-cat'); if(vcat) vcat.onchange=()=>S.vf.cat=vcat.checked;
   const vde=document.getElementById('v-desc'); if(vde) vde.oninput=()=>{ S.vf.desc=vde.value; refreshTotals(); };
   const vdt=document.getElementById('v-desc-tipo'); if(vdt) vdt.onchange=()=>{ S.vf.descTipo=vdt.value; refreshTotals(); };
   const refreshTotals=()=>{ S.vLines.forEach((l,i)=>{ const el=document.getElementById('vl-sub-'+i); if(el) el.textContent=money(lineTotal(l)); });
@@ -996,7 +1002,7 @@ function bindApp(){
   if(vadd) vadd.onclick=()=>{ S.vLines.push(newLine()); render(); const ss=document.querySelectorAll('[data-vf="prod"]'); ss[ss.length-1]?.focus(); };
   const fv=document.getElementById('f-venta');
   if(fv) fv.onsubmit=async e=>{ e.preventDefault();
-    const fecha=document.getElementById('v-fecha').value; const medio=document.getElementById('v-medio').value;
+    const fecha=document.getElementById('v-fecha').value; const medio=document.getElementById('v-medio').value; const deCat=!!document.getElementById('v-cat')?.checked;
     const items=[]; const need={};
     for(const l of S.vLines){ if(!l.prod) continue;
       const [pid,vkey]=l.prod.split('::'); const vg=variantsOf(pid).find(x=>x.key===vkey); const cant=parseInt(l.cant,10);
@@ -1023,6 +1029,7 @@ function bindApp(){
       items.forEach((x,k)=>{ const lote=x.vg.lots.find(l=>l.restante>0)||x.vg.lots[0];
         const d={fecha, clienteId:cid, productoId:x.pid, cantidad:x.cant, precioUnit:x.precio, costoUnit:x.vg.costo, loteId:lote.id, medio, vendedor:S.me, creado:now+k};
         if(x.desc>0) d.descuento=x.desc;
+        if(deCat) d.catalogo=true;
         if(pedidoId) d.pedidoId=pedidoId; b.set(S.db.collection('ventas').doc(), d); });
       await b.commit(); ok=true; },
       (items.length>1 ? `Venta guardada: ${items.length} sabores, ${units} u. para ${clientName(cid)}` : `Venta guardada: ${items[0].cant} × ${prodName(items[0].pid)}`) + (descT?` (descuento ${money(descT)})`:''));
