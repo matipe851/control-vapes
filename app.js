@@ -518,7 +518,8 @@ function viewStock(){
     <span class="sub">${S.blue?`Se pasa a pesos con el blue promedio de hoy (${money(S.blue.prom)})`:(S.blueErr||'Buscando cotización del dólar…')}</span></div>`:''}
   ${prods.length?`<div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th>Modelo</th><th class="r">Costo US$</th><th class="r">Costo $</th><th class="r">Precio</th><th class="r">Vendidas</th><th class="r">Stock</th><th>Por precio</th><th>Estado</th>${admin?'<th></th>':''}</tr></thead><tbody>
   ${prods.map(p=>{const s=stockOf(p.id); const st= s<=0?['Sin stock','bad']: s<=(Number(p.stockMin)||0)?['Reponer','warn']:['OK','ok'];
-    return `<tr><td><b>${esc(p.sabor)}</b></td><td class="sub">${esc(p.modelo||'')} ${p.puffs?`· ${n0.format(p.puffs)} puffs`:''}</td>
+    return `<tr><td>${admin&&S.renProd===p.id?`<span class="split" style="flex-wrap:nowrap"><input id="ren-in" maxlength="50" value="${esc(p.sabor)}" style="width:160px" aria-label="Nuevo nombre"><button class="btn sm" data-ren-save="${p.id}">Guardar</button><button class="btn ghost sm" data-ren-cancel>Cancelar</button></span>`
+      :`<b>${esc(p.sabor)}</b>${admin?` <button class="btn ghost sm" data-ren="${p.id}" aria-label="Cambiar nombre de ${esc(p.sabor)}" title="Cambiar nombre">✏️</button>`:''}`}</td><td class="sub">${esc(p.modelo||'')} ${p.puffs?`· ${n0.format(p.puffs)} puffs`:''}</td>
     <td class="r">${admin?`<input class="num" style="width:84px;text-align:right" type="number" min="0" step="0.01" data-usd="${p.id}" value="${Number(p.costoUSD)||''}" placeholder="US$" aria-label="Costo en dólares de ${esc(p.sabor)}">`:(p.costoUSD?usd(p.costoUSD):'—')}</td>
     <td class="r">${admin?`<input class="num" style="width:96px;text-align:right" type="number" min="0" data-edit="${p.id}" data-f="costo" value="${Number(p.costo)||''}" placeholder="$" aria-label="Costo de ${esc(p.sabor)}">`:money(p.costo)}${p.costoUSD&&p.tc?`<br><span class="sub num" style="white-space:nowrap">× ${money(p.tc)}</span>`:''}</td>
     <td class="r">${admin?`<input class="num" style="width:96px;text-align:right" type="number" min="0" data-edit="${p.id}" data-f="precio" value="${Number(p.precio)||''}" placeholder="$" aria-label="Precio de ${esc(p.sabor)}">`:money(p.precio)}</td>
@@ -951,6 +952,14 @@ function bindApp(){
     const extraU = pu ? {costoUSD:pu, tc:bl} : {};
     save(()=>S.db.collection('productos').add({sabor, modelo:v('p-modelo').trim(), puffs:Number(v('p-puffs'))||0, costo: pu? Math.round(pu*bl) : (Number(v('p-costo'))||0), ...extraU, precio:Number(v('p-precio'))||0, stockInicial:Number(v('p-stock'))||0, stockMin:Number(v('p-min'))||0, creado:Date.now()}), 'Sabor agregado'); };
   if(S.tab==='stock') cargarBlue();
+  q('[data-ren]',b=>b.onclick=()=>{ S.renProd=b.dataset.ren; render(); const i=document.getElementById('ren-in'); if(i){ i.focus(); i.select(); } });
+  q('[data-ren-cancel]',b=>b.onclick=()=>{ S.renProd=null; render(); });
+  const renSave=id=>{ const nuevo=(document.getElementById('ren-in')?.value||'').trim(); const viejo=S.prods[id]?.sabor;
+    if(!nuevo) return toast('Escribí un nombre'); if(nuevo===viejo){ S.renProd=null; return render(); }
+    if(Object.values(S.prods).some(p=>p.id!==id && p.sabor.toLowerCase()===nuevo.toLowerCase())) return toast('Ya hay un sabor con ese nombre');
+    S.renProd=null; document.activeElement?.blur(); save(()=>S.db.doc('productos/'+id).update({sabor:nuevo}), `"${viejo}" ahora es "${nuevo}" en toda la planilla`); render(); };
+  q('[data-ren-save]',b=>b.onclick=()=>renSave(b.dataset.renSave));
+  const rin=document.getElementById('ren-in'); if(rin) rin.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); renSave(S.renProd); } else if(e.key==='Escape'){ S.renProd=null; render(); } };
   const setUsd=async(ids,u)=>{ const bl=S.blue?.prom||0; if(!bl) throw Object.assign(new Error('sin cotización'),{code:'sin-blue'});
     const b=S.db.batch(); ids.forEach(id=>b.update(S.db.doc('productos/'+id),{costoUSD:u, costo:Math.round(u*bl), tc:bl})); await b.commit(); };
   q('[data-usd]',inp=>inp.onchange=()=>{ const id=inp.dataset.usd, u=Number(inp.value)||0; if(!(u>0)) return; if(Number(S.prods[id]?.costoUSD)===u) return;
