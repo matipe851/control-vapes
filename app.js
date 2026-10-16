@@ -173,6 +173,13 @@ function viewBulk(){
 }
 // ---------- Fiado ----------
 const esFiado = v => v.medio==='Fiado';
+// ---------- saldo en cuenta (solo admin) ----------
+const CUENTA_MEDIOS = ['Mercado Pago','Transferencia'];
+const cuentaCfg = () => { const a=Object.values(S.users).find(u=>u.rol==='admin'&&u.cuenta); return a?a.cuenta:null; };
+const ventaFechaCobro = v => v.cobrado || v.fecha;
+const cobrosCuenta = desde => Object.values(S.ventas).filter(v=>!esFiado(v) && CUENTA_MEDIOS.includes(v.medio) && (!desde || (ventaFechaCobro(v)||'')>=desde)).reduce((a,v)=>a+ventaTotal(v),0);
+const primeraVenta = () => Object.values(S.ventas).map(v=>v.fecha).filter(Boolean).sort()[0] || today();
+const saldoCuenta = () => { const c=cuentaCfg(); if(!c) return null; const cob=cobrosCuenta(c.desde); return {inicial:Number(c.saldoInicial)||0, cobros:cob, total:(Number(c.saldoInicial)||0)+cob, desde:c.desde}; };
 function deudas(){
   const m={};
   for(const v of Object.values(S.ventas)){ if(!esFiado(v)) continue;
@@ -424,6 +431,7 @@ function viewResumen(){
     <div class="kpi"><span class="l">Clientes que compraron</span><span class="v num">${clientesPer}</span><span class="h">${Object.keys(S.clients).length} en total</span></div>
     <div class="kpi"><span class="l">Stock disponible</span><span class="v num">${n0.format(stockTot)}</span><span class="h">${valorStock?`Vale ${money(valorStock)} a precio de venta`:'Cargá precios en Stock'}</span></div>
     <div class="kpi"><span class="l">Te deben (fiado)</span><span class="v num" style="color:${totalDeuda()?'var(--bad)':'inherit'}">${money(totalDeuda())}</span><span class="h">${deudas().length} cliente${deudas().length===1?'':'s'} · ver pestaña Fiado</span></div>
+    ${S.users[S.me]?.rol==='admin'?(()=>{ const sc=saldoCuenta(); return sc?`<div class="kpi"><span class="l">Saldo en cuenta</span><span class="v num">${money(sc.total)}</span><span class="h">Saldo anterior ${money(sc.inicial)} + cobros ${money(sc.cobros)} · <a href="#" data-goto-cuenta>ajustar</a></span></div>`:`<div class="kpi"><span class="l">Saldo en cuenta</span><span class="v num" style="color:var(--muted,#888)">—</span><span class="h"><a href="#" data-goto-cuenta>Cargar saldo en Mi cuenta</a></span></div>`; })():''}
     <div class="kpi"><span class="l">Sabores a reponer</span><span class="v num" style="color:${reponer?'var(--warn)':'inherit'}">${reponer}</span><span class="h">Stock en el mínimo o debajo</span></div>
   </section>
   <div class="grid2">
@@ -797,7 +805,16 @@ function viewCuenta(){
     <label>Contraseña actual<input id="pw-old" type="password" required autocomplete="current-password"></label>
     <label>Contraseña nueva<input id="pw-new" type="password" required minlength="6" autocomplete="new-password"></label>
     <button class="btn" type="submit">Cambiar contraseña</button>
-  </form></section>`;
+  </form></section>
+  ${me?.rol==='admin'?(()=>{ const sc=saldoCuenta(); const desde=sc?.desde||primeraVenta();
+  return `<section class="panel" style="max-width:520px"><div class="panel-head"><div><h2>Saldo en cuenta</h2><span class="sub">Lo que tenés en la cuenta (Mercado Pago / transferencias). Se suma solo con cada venta cobrada por esos medios.</span></div></div>
+  ${sc?`<p class="num" style="margin:0 0 10px">Saldo actual: <b>${money(sc.total)}</b><br><span class="sub">Saldo anterior ${money(sc.inicial)} + cobros desde el ${fmtDate(sc.desde)}: ${money(sc.cobros)}</span></p>`:''}
+  <form class="form" id="f-saldo" autocomplete="off" style="grid-template-columns:1fr 1fr">
+    <label>Saldo real en la cuenta hoy<input id="sc-real" type="number" min="0" step="1" required placeholder="Ej: 908000" value="${sc?sc.total:''}"></label>
+    <label>Ventas cobradas desde<input id="sc-desde" type="date" required value="${desde}"></label>
+    <button class="btn" type="submit" style="grid-column:1/-1">Guardar saldo</button>
+  </form>
+  <p class="note">Poné lo que te figura hoy en la cuenta, con las ventas ya incluidas. La planilla calcula sola el saldo anterior restando los cobros por Mercado Pago y Transferencia desde esa fecha. El efectivo y las compras no se tocan.</p></section>`; })():''}`;
 }
 
 // ---------- events ----------
@@ -1027,6 +1044,14 @@ function bindApp(){
     } catch(err){ toast(err?.code?.startsWith('auth/')?authErrMsg(err):writeErr(err)); }
     btn.disabled=false;
   };
+  const fsc=document.getElementById('f-saldo');
+  if(fsc) fsc.onsubmit=e=>{ e.preventDefault();
+    const real=Number(document.getElementById('sc-real').value); const desde=document.getElementById('sc-desde').value;
+    if(!(real>=0) || !desde) return toast('Completá el saldo y la fecha');
+    const inicial=real-cobrosCuenta(desde);
+    save(()=>S.db.doc('usuarios/'+S.me).update({cuenta:{saldoInicial:inicial, desde, actualizado:Date.now()}}), `Saldo guardado: ${money(real)} (anterior ${money(inicial)})`);
+  };
+  document.querySelectorAll('[data-goto-cuenta]').forEach(a=>a.onclick=e=>{ e.preventDefault(); S.tab='cuenta'; ssSet('cv_tab','cuenta'); render(); window.scrollTo(0,0); });
   const fpw=document.getElementById('f-pass');
   if(fpw) fpw.onsubmit=async e=>{ e.preventDefault();
     const user=S.auth.currentUser; const oldp=document.getElementById('pw-old').value, newp=document.getElementById('pw-new').value;
