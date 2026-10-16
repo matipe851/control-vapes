@@ -174,7 +174,7 @@ function viewBulk(){
 // ---------- Fiado ----------
 const esFiado = v => v.medio==='Fiado';
 // ---------- color por sabor ----------
-const FLAVORS=[[/water ?melon|sand[ií]a/i,'#e2445c'],[/grape|uva/i,'#7b4fc9'],[/blue ?razz|blueberry|ar[aá]ndano/i,'#2f6fe4'],[/mango/i,'#f0961c'],[/peach|durazno/i,'#f08a63'],[/mint|menta|menthol/i,'#1fae8c'],[/apple|manzana/i,'#5eb233'],[/dragon/i,'#d93f9b'],[/cranberry|pineapple|anan[aá]/i,'#c23452'],[/straw|frutilla|fresa/i,'#ea3f6b'],[/melon/i,'#86bf3e'],[/lemon|lim[oó]n/i,'#e2c21b'],[/cola/i,'#8a5a3c']];
+const FLAVORS=[[/water ?melon|sand[ií]a/i,'#e2445c'],[/grape|uva/i,'#7b4fc9'],[/blue ?razz|blueberry|ar[aá]ndano/i,'#2f6fe4'],[/mango/i,'#f0961c'],[/peach|durazno/i,'#f08a63'],[/mint|menta|menthol/i,'#1fae8c'],[/cranberry|pineapple|anan[aá]/i,'#c23452'],[/apple|manzana/i,'#5eb233'],[/dragon/i,'#d93f9b'],[/straw|frutilla|fresa/i,'#ea3f6b'],[/melon/i,'#86bf3e'],[/lemon|lim[oó]n/i,'#e2c21b'],[/cola/i,'#8a5a3c']];
 const flavorColor = name => { const f=FLAVORS.find(([re])=>re.test(String(name||''))); return f?f[1]:null; };
 const flDot = name => { const c=flavorColor(name); return c?`<i class="fl" style="--fl:${c}" aria-hidden="true"></i>`:''; };
 // ---------- saldo en cuenta (solo admin) ----------

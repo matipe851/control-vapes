@@ -75,10 +75,10 @@ main{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:22px 64px;
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:18px}
 
 /* key figures: one ruled strip, not a pile of cards */
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,175px),1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,190px),1fr));gap:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .kpi{background:var(--surface);padding:14px 16px 15px;display:grid;gap:1px;align-content:start;min-width:0}
 .kpi .l{font-size:13px;color:var(--muted);font-weight:500}
-.kpi .v{font-family:var(--display);font-variation-settings:"wdth" 125;font-size:27px;font-weight:700;letter-spacing:-.015em;line-height:1.15;margin-block:3px 1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi .v{font-family:var(--display);font-variation-settings:"wdth" 110;font-size:25px;font-weight:700;letter-spacing:-.015em;line-height:1.15;margin-block:3px 1px;white-space:nowrap}
 .kpi .h{font-size:12.5px;color:var(--muted)}
 
 /* forms & tables */
@@ -135,7 +135,7 @@ tr:last-child td{border-bottom:0}
   .page-title{font-size:22px}
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   .kpi{padding:12px 13px}
-  .kpi .v{font-size:21px}
+  .kpi .v{font-size:19px;font-variation-settings:"wdth" 100}
   .vline{grid-template-columns:64px minmax(0,1fr) auto auto;padding-bottom:10px;border-bottom:1px solid var(--line)}
   .vline>select{grid-column:1/-1}
   .vline.vhead{display:none}
