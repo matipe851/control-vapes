@@ -565,8 +565,19 @@ async function cargarBlue(force){
 }
 
 // ---------- Asesor financiero ----------
-const ASE_DEF={margen:35, ref:29900, redondeo:500};
-function aseCfg(){ let c={}; try{ c=JSON.parse(ssGet('cv_asesor')||'{}')||{}; }catch(e){} return {...ASE_DEF, ...c}; }
+const ASE_DEF={margen:35, ref:29900, redondeo:500, refModo:'min'};
+const MERCADO_URL='https://raw.githubusercontent.com/matipe851/control-vapes/main/precios-mercado.json';
+const MERCADO_RUN='https://github.com/matipe851/control-vapes/actions/workflows/precios-mercado.yml';
+async function cargarMercado(force){
+  if(S.mercPend || (!force && S.mercado!==undefined)) return; S.mercPend=true;
+  try{ const r=await fetch(MERCADO_URL+'?t='+Date.now(),{cache:'no-store'}); if(!r.ok) throw new Error(r.status); S.mercado=await r.json(); S.mercErr=null; }
+  catch(e){ console.error(e); S.mercado=S.mercado||null; S.mercErr='No se pudieron leer los precios de mercado.'; }
+  S.mercPend=false; scheduleRender();
+}
+function aseCfg(){ let c={}; try{ c=JSON.parse(ssGet('cv_asesor')||'{}')||{}; }catch(e){} const cfg={...ASE_DEF, ...c};
+  cfg.refManual=cfg.ref;
+  if(cfg.refModo!=='manual' && S.mercado && S.mercado.minimo) cfg.ref = cfg.refModo==='prom' ? S.mercado.promedio : S.mercado.minimo;
+  return cfg; }
 const redondear=(v,r)=> r>0 ? Math.round(v/r)*r : Math.round(v);
 const pct = v => (v>=0?'':'−')+Math.abs(Math.round(v*100))+'%';
 function asesor(){
@@ -674,7 +685,7 @@ function viewAsesor(){
       <div class="kpi"><span class="l">Precio actual</span><span class="v num">${a.precioActual?money(a.precioActual):'—'}</span><span class="h">${a.margenActual!=null?`margen hoy ${pct(a.margenActual)}`:'cargá costos'}</span></div>
       <div class="kpi"><span class="l">Costo de reponer hoy</span><span class="v num">${a.costoGlobal?money(a.costoGlobal):'—'}</span><span class="h">${a.usdProm&&a.blue?`US$ ${a.usdProm.toFixed(2)} × ${money(a.blue)}`:'según costos en pesos'}</span></div>
       <div class="kpi"><span class="l">Precio sugerido</span><span class="v num" style="color:var(--accent)">${a.precioSug?money(a.precioSug):'—'}</span><span class="h">${a.margenSug!=null?`margen ${pct(a.margenSug)}${a.difPrecio?` · ${a.difPrecio>0?'+':''}${pct(a.difPrecio)} vs hoy`:''}`:''}</span></div>
-      <div class="kpi"><span class="l">Tiendas online</span><span class="v num">${money(a.cfg.ref)}</span><span class="h">${a.margenRef!=null?`con ese precio ganarías ${pct(a.margenRef)}`:''}</span></div>
+      <div class="kpi"><span class="l">Tiendas online${a.cfg.refModo!=='manual'&&S.mercado?(a.cfg.refModo==='prom'?' (promedio)':' (más barato)'):''}</span><span class="v num">${money(a.cfg.ref)}</span><span class="h">${a.margenRef!=null?`con ese precio ganarías ${pct(a.margenRef)}`:''}</span></div>
     </section>
     ${a.precioSug && a.precioSug!==a.precioActual?`<div class="split"><button class="btn" data-ase-all data-v="${a.precioSug}">Poner ${money(a.precioSug)} a todos los sabores</button>${a.cfg.ref&&a.cfg.ref!==a.precioSug?`<button class="btn ghost" data-ase-all data-v="${a.cfg.ref}">Usar precio de mercado (${money(a.cfg.ref)})</button>`:''}</div>
     <p class="sub">Cambia el precio de todo el stock y de las próximas reposiciones. El catálogo y el mensaje de WhatsApp se actualizan solos.</p>`:'<p class="note">Tu precio ya está en el sugerido.</p>'}
@@ -689,11 +700,19 @@ function viewAsesor(){
   <section class="panel"><h2>Ajustes del asesor</h2>
     <form class="form" id="f-ase">
       <label>Margen objetivo (%)<input type="number" id="ase-m" min="5" max="80" value="${c.margen}"></label>
-      <label>Precio de referencia del mercado ($)<input type="number" id="ase-r" min="0" step="100" value="${c.ref}"></label>
+      <label>Precio de mercado<select id="ase-modo"><option value="min" ${c.refModo==='min'?'selected':''}>Automático: el más barato</option><option value="prom" ${c.refModo==='prom'?'selected':''}>Automático: promedio de tiendas</option><option value="manual" ${c.refModo==='manual'?'selected':''}>Lo pongo yo</option></select></label>
+      <label>Precio manual ($)<input type="number" id="ase-r" min="0" step="100" value="${c.refManual}" ${c.refModo!=='manual'?'disabled':''}></label>
       <label>Redondear a<select id="ase-red">${[100,500,1000].map(n=>`<option value="${n}" ${c.redondeo===n?'selected':''}>$${n}</option>`).join('')}</select></label>
       <button class="btn ghost" type="submit">Guardar ajustes</button>
     </form>
-    <p class="sub">Margen = lo que te queda de cada venta sobre el precio. Referencia = lo que cobran las tiendas online (en octubre 2026, entre $29.900 y $31.990).</p>
+    <p class="sub">Margen = lo que te queda de cada venta sobre el precio.</p>
+    <div class="note" style="color:var(--fg);display:grid;gap:8px">
+      <div class="panel-head"><b>Precios de mercado</b><span class="sub">${S.mercado?.actualizado?`actualizado ${new Date(S.mercado.actualizado).toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'})}`:(S.mercErr||'cargando…')}</span></div>
+      ${S.mercado?.tiendas?.length?`<div class="split">${S.mercado.tiendas.map(t=>`<a class="pill mid" style="text-decoration:none" href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.tienda)} · ${money(t.precio)}</a>`).join('')}</div>
+      <span class="sub">Más barato ${money(S.mercado.minimo)} · promedio ${money(S.mercado.promedio)}${(S.mercado.historial||[]).length>1?(()=>{const h=S.mercado.historial; const a=h[h.length-2].minimo, b=h[h.length-1].minimo; return a&&b&&a!==b?` · ${b>a?'subió':'bajó'} ${pct(Math.abs(b-a)/a)} desde el ${h[h.length-2].fecha.slice(8,10)}/${h[h.length-2].fecha.slice(5,7)}`:'';})():''}</span>`:''}
+      <span class="sub">Se buscan solos todos los días a las 8:47. Para buscarlos ya: tocá "Buscar ahora", en GitHub tocá <b>Run workflow</b> → <b>Run workflow</b>, esperá ~1 minuto y volvé a tocar "Recargar".</span>
+      <div class="split"><a class="btn ghost sm" href="${MERCADO_RUN}" target="_blank" rel="noopener" style="text-decoration:none">Buscar ahora</a><button type="button" class="btn ghost sm" data-merc-reload>Recargar</button></div>
+    </div>
   </section>
   <section class="panel"><div class="panel-head"><div><h2>Análisis con Claude</h2><span class="sub">Copia un resumen de tus números para pegarlo en Claude y pedirle un análisis más profundo.</span></div>
     <div class="split"><button class="btn ghost" data-ase-copy>Copiar datos</button><a class="btn ghost" href="https://claude.ai/new" target="_blank" rel="noopener" style="text-decoration:none">Abrir Claude</a></div></div>
@@ -852,12 +871,14 @@ function bindApp(){
   if(fcat) fcat.onsubmit=e=>{ e.preventDefault(); const txt=document.getElementById('cat-tel').value.trim(); const num=waNumber(txt);
     if(!num) return toast('Ese número no parece un celular válido');
     save(()=>S.db.doc('catalogo/actual').set({telefono:num, telefonoTxt:txt, titulo:document.getElementById('cat-tit').value.trim()||MSG_HEADER, promo:document.getElementById('cat-promo').value.trim(), activo:document.getElementById('cat-act').checked, items:catalogoItems(), actualizado:Date.now()},{merge:true}), 'Catálogo publicado'); };
-  if(S.tab==='asesor') cargarBlue();
+  if(S.tab==='asesor'){ cargarBlue(); cargarMercado(); }
   q('[data-ase-all]',b=>b.onclick=async()=>{ const v=Number(b.dataset.v); if(!(v>0)) return; const ids=Object.keys(S.prods);
     await save(async()=>{ for(const id of ids) await aplicarPrecio(id, v); }, `Precio ${money(v)} aplicado a los ${ids.length} sabores`); });
   q('[data-ase-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(textoAsesor(asesor())); toast('Datos copiados: pegalos en Claude'); }catch(e){ toast('No se pudo copiar'); } });
   const fase=document.getElementById('f-ase'); if(fase) fase.onsubmit=e=>{ e.preventDefault();
-    ssSet('cv_asesor', JSON.stringify({margen:Math.min(80,Math.max(5,Number(document.getElementById('ase-m').value)||35)), ref:Number(document.getElementById('ase-r').value)||0, redondeo:Number(document.getElementById('ase-red').value)||500})); toast('Ajustes guardados'); render(); };
+    ssSet('cv_asesor', JSON.stringify({margen:Math.min(80,Math.max(5,Number(document.getElementById('ase-m').value)||35)), ref:Number(document.getElementById('ase-r').value)||aseCfg().refManual||0, refModo:document.getElementById('ase-modo').value, redondeo:Number(document.getElementById('ase-red').value)||500})); toast('Ajustes guardados'); render(); };
+  const amod=document.getElementById('ase-modo'); if(amod) amod.onchange=()=>{ const r=document.getElementById('ase-r'); if(r) r.disabled = amod.value!=='manual'; };
+  q('[data-merc-reload]',b=>b.onclick=()=>{ toast('Buscando precios guardados…'); cargarMercado(true); });
   q('[data-cli-goedit]',b=>b.onclick=()=>{ S.tab='clientes'; ssSet('cv_tab','clientes'); S.editCli=b.dataset.cliGoedit; render(); document.getElementById('ec-contacto')?.focus(); });
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ S.tab=b.dataset.tab; S.confirm=null; S.editCli=null; ssSet('cv_tab',S.tab); render(); window.scrollTo(0,0); });
   const per=document.getElementById('period'); if(per) per.onchange=()=>{ S.period=per.value; ssSet('cv_period',S.period); render(); };
