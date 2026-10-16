@@ -1,11 +1,29 @@
 {
- "actualizado": "2026-10-15T21:00:00Z",
+ "actualizado": "2026-10-16T00:06:11Z",
  "minimo": 29900,
- "promedio": 30597,
+ "promedio": 30945,
  "tiendas": [
-  {"tienda": "Cloud Imports", "url": "https://cloudimports.com.ar/productos/elfbar-ice-king-40000-grape-ice/", "precio": 29900},
-  {"tienda": "Ofertas La Plata", "url": "https://www.ofertaslaplata.com.ar/productos/vaper-desechable-elfbar-ice-king-40-000-puffs/", "precio": 29900},
-  {"tienda": "Goat Vape", "url": "https://goatvape.com.ar/categoria-producto/elfbar/elfbar-ice-king-40k/", "precio": 31990}
+  {
+   "tienda": "Cloud Imports",
+   "url": "https://cloudimports.com.ar/productos/elfbar-ice-king-40000-grape-ice/",
+   "precio": 29900
+  },
+  {
+   "tienda": "Goat Vape",
+   "url": "https://goatvape.com.ar/categoria-producto/elfbar/elfbar-ice-king-40k/",
+   "precio": 31990
+  }
  ],
- "historial": [{"fecha": "2026-10-15", "minimo": 29900, "promedio": 30597}]
+ "historial": [
+  {
+   "fecha": "2026-10-15",
+   "minimo": 29900,
+   "promedio": 30597
+  },
+  {
+   "fecha": "2026-10-16",
+   "minimo": 29900,
+   "promedio": 30945
+  }
+ ]
 }
