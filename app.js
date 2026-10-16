@@ -87,7 +87,7 @@ function mensajeStock(){
   return `*${MSG_HEADER}*\n\n` + (lineas.length? lineas.join('\n') : 'Por ahora no hay sabores en stock.') + link;
 }
 // ---------- Catálogo online ----------
-const catalogoURL = () => location.origin + location.pathname.replace(/[^/]*$/,'') + 'catalogo.html';
+const catalogoURL = () => 'https://matipe851.github.io/iceking/';
 const catalogoActivo = () => !!(S.catalogo && S.catalogo.activo!==false && S.catalogo.telefono && !S.catErr);
 function catalogoItems(){
   return Object.values(S.prods).map(p=>{ const st=stockOf(p.id); if(st<=0) return null;
@@ -115,7 +115,7 @@ function viewCatalogo(){
     <form class="form" id="f-cat" autocomplete="off">
       <label>WhatsApp donde te llegan los pedidos<input id="cat-tel" required maxlength="30" placeholder="11 2345-6789" value="${esc(c.telefonoTxt||'')}"></label>
       <label>Título<input id="cat-tit" maxlength="60" value="${esc(c.titulo||MSG_HEADER)}"></label>
-      <label style="grid-column:1/-1">Promo o aviso (opcional)<input id="cat-promo" maxlength="160" placeholder="2 por $54.000 · Envíos en CABA" value="${esc(c.promo||'')}"></label>
+      <label style="grid-column:1/-1">Oferta (se muestra bien grande; formato "2 x $55.000")<input id="cat-promo" maxlength="160" placeholder="2 x $55.000" value="${esc(c.promo||'')}"></label>
       <label style="flex-direction:row;display:flex;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" id="cat-act" style="width:auto" ${c.activo!==false?'checked':''}> Catálogo visible</label>
       <button class="btn" type="submit">Guardar y publicar</button>
     </form>
