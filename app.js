@@ -173,6 +173,10 @@ function viewBulk(){
 }
 // ---------- Fiado ----------
 const esFiado = v => v.medio==='Fiado';
+// ---------- color por sabor ----------
+const FLAVORS=[[/water ?melon|sand[ií]a/i,'#e2445c'],[/grape|uva/i,'#7b4fc9'],[/blue ?razz|blueberry|ar[aá]ndano/i,'#2f6fe4'],[/mango/i,'#f0961c'],[/peach|durazno/i,'#f08a63'],[/mint|menta|menthol/i,'#1fae8c'],[/apple|manzana/i,'#5eb233'],[/dragon/i,'#d93f9b'],[/cranberry|pineapple|anan[aá]/i,'#c23452'],[/straw|frutilla|fresa/i,'#ea3f6b'],[/melon/i,'#86bf3e'],[/lemon|lim[oó]n/i,'#e2c21b'],[/cola/i,'#8a5a3c']];
+const flavorColor = name => { const f=FLAVORS.find(([re])=>re.test(String(name||''))); return f?f[1]:null; };
+const flDot = name => { const c=flavorColor(name); return c?`<i class="fl" style="--fl:${c}" aria-hidden="true"></i>`:''; };
 // ---------- saldo en cuenta (solo admin) ----------
 const CUENTA_MEDIOS = ['Mercado Pago','Transferencia'];
 const cuentaOwner = () => Object.values(S.users).find(u=>u.rol==='admin'&&(u.cuenta||u.cuentaMovs)) || S.users[S.me];
@@ -247,7 +251,7 @@ function viewPedido(){
   return `<section class="panel"><div class="panel-head"><div><h2>Pedido sugerido</h2><span class="sub">Según lo que se vendió de cada sabor en los últimos 30 días</span></div>
     <label style="flex-direction:row;display:flex;align-items:center;gap:8px">Que alcance para<select id="ped-sem" style="width:auto">${[1,2,3,4].map(n=>`<option value="${n}" ${S.pedSem===n?'selected':''}>${n} semana${n>1?'s':''}</option>`).join('')}</select></label></div>
   ${rows.length?`<div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th class="r">Vendidas 30 d</th><th class="r">Por semana</th><th class="r">Stock</th><th>Alcanza para</th><th class="r">Pedir</th></tr></thead><tbody>
-  ${rows.map(x=>`<tr><td><b>${esc(x.p.sabor)}</b></td><td class="r num">${x.v30}</td><td class="r num">${x.porSem?x.porSem.toFixed(1):'—'}</td><td class="r num">${x.st}</td>
+  ${rows.map(x=>`<tr><td>${flDot(x.p.sabor)}<b>${esc(x.p.sabor)}</b></td><td class="r num">${x.v30}</td><td class="r num">${x.porSem?x.porSem.toFixed(1):'—'}</td><td class="r num">${x.st}</td>
     <td>${x.st<=0?'<span class="pill bad">Sin stock</span>':x.dias==null?'<span class="sub">sin ventas recientes</span>':`<span class="pill ${x.dias<7?'bad':x.dias<14?'warn':'ok'}">${x.dias} días</span>`}</td>
     <td class="r num"><b style="font-size:16px;color:${x.sug?'var(--accent)':'var(--muted)'}">${x.sug||'—'}</b></td></tr>`).join('')}
   </tbody></table></div>
@@ -391,10 +395,10 @@ function periodSelect(){
   return `<select id="period" style="width:auto">${opts.map(([k,l])=>`<option value="${k}" ${S.period===k?'selected':''}>${l}</option>`).join('')}</select>`;
 }
 
-function barList(rows, fmt, cls=''){
+function barList(rows, fmt, cls='', flavor=false){
   if(!rows.length) return `<p class="empty">Todavía no hay ventas en este período.</p>`;
   const max=Math.max(...rows.map(r=>r[1]))||1;
-  return `<div class="bars">${rows.map(([n,v,extra])=>`<div class="bar-row"><span class="n" title="${esc(n)}">${esc(n)}</span><div class="bar ${cls}"><i style="width:${(v/max*100).toFixed(1)}%"></i></div><span class="num">${fmt(v)}${extra?` <span class="sub">${extra}</span>`:''}</span></div>`).join('')}</div>`;
+  return `<div class="bars">${rows.map(([n,v,extra])=>`<div class="bar-row"><span class="n" title="${esc(n)}">${flavor?flDot(n):''}${esc(n)}</span><div class="bar ${cls}"><i style="width:${(v/max*100).toFixed(1)}%${flavor&&flavorColor(n)?`;background:${flavorColor(n)}`:''}"></i></div><span class="num">${fmt(v)}${extra?` <span class="sub">${extra}</span>`:''}</span></div>`).join('')}</div>`;
 }
 
 function viewResumen(){
@@ -431,7 +435,7 @@ function viewResumen(){
   const low=Object.values(S.prods).map(p=>({p,s:stockOf(p.id)})).filter(o=>o.s<=(Number(o.p.stockMin)||0)).sort((a,b)=>a.s-b.s);
 
   return `
-  <div class="panel-head"><div><h2 style="font-size:22px;font-weight:800">Resumen</h2><span class="sub">Se actualiza solo con cada venta que carga cualquier usuario.</span></div>${periodSelect()}</div>
+  <div class="panel-head"><div><h2 class="page-title">Resumen</h2><span class="sub">Se actualiza solo con cada venta que carga cualquier usuario.</span></div>${periodSelect()}</div>
   <section class="kpis">
     <div class="kpi"><span class="l">Facturación</span><span class="v num">${money(total)}</span><span class="h">${ops} venta${ops===1?'':'s'}${(()=>{const d=vs.reduce((a,v)=>a+(Number(v.descuento)||0),0); return d?` · ${money(d)} en descuentos`:'';})()}</span></div>
     <div class="kpi"><span class="l">Unidades vendidas</span><span class="v num">${n0.format(unid)}</span><span class="h">Ticket prom. ${money(ops?total/ops:0)}</span></div>
@@ -443,7 +447,7 @@ function viewResumen(){
     <div class="kpi"><span class="l">Sabores a reponer</span><span class="v num" style="color:${reponer?'var(--warn)':'inherit'}">${reponer}</span><span class="h">Stock en el mínimo o debajo</span></div>
   </section>
   <div class="grid2">
-    <section class="panel"><div class="panel-head"><h2>Sabores más vendidos</h2><span class="sub">unidades</span></div>${barList(rankSabor, n0.format)}</section>
+    <section class="panel"><div class="panel-head"><h2>Sabores más vendidos</h2><span class="sub">unidades</span></div>${barList(rankSabor, n0.format, '', true)}</section>
     <section class="panel"><div class="panel-head"><h2>${useUnits?'Unidades':'Facturación'} por mes</h2><span class="sub">últimos 6 meses</span></div>
       <div class="months">${months.map((m,i)=>`<div class="mcol ${i===5?'cur':''}"><span class="val num">${mval(m)? (useUnits? n0.format(mval(m)) : (mval(m)>=1000? '$'+Math.round(mval(m)/1000)+'k' : money(mval(m)))) : ''}</span><div class="stick"><i style="height:${(mval(m)/mmax2*100).toFixed(1)}%"></i></div><span>${m.l}</span></div>`).join('')}</div></section>
     <section class="panel"><div class="panel-head"><h2>Ventas por vendedor</h2><span class="sub">facturación</span></div>${barList(rankVend, money, 'ice')}</section>
@@ -456,7 +460,7 @@ function viewResumen(){
         return ps.length?`<div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Cuándo</th><th class="r">Cada</th><th>Suele llevar</th><th></th></tr></thead><tbody>${ps.map(o=>`<tr><td>${esc(o.c.nombre)}</td><td class="num"><span class="pill ${o.faltan<=0?'warn':'mid'}">${faltanTxt(o)}</span></td><td class="r num" style="white-space:nowrap">${freqTxt(o)}</td><td>${esc(o.fav)}</td><td class="r">${waBtn(o.c)}</td></tr>`).join('')}</tbody></table></div>`:`<p class="empty">Nadie tiene previsto comprar esta semana.</p>`; })()}
     </section>
   </div>
-  ${low.length?`<section class="panel"><div class="panel-head"><h2>Reponer</h2></div><div class="split">${low.map(o=>`<span class="pill ${o.s<=0?'bad':'warn'}">${esc(o.p.sabor)} · ${o.s}</span>`).join('')}</div></section>`:''}`;
+  ${low.length?`<section class="panel"><div class="panel-head"><h2>Reponer</h2></div><div class="split">${low.map(o=>`<span class="pill ${o.s<=0?'bad':'warn'}">${flDot(o.p.sabor)}${esc(o.p.sabor)}: ${o.s}</span>`).join('')}</div></section>`:''}`;
 }
 
 function viewVentas(){
@@ -501,7 +505,7 @@ function viewVentas(){
   </form></section>
   <section class="panel"><div class="panel-head"><div><h2>Ventas</h2><span class="sub num">${list.length} ventas · ${money(tot)}</span></div>${periodSelect()}</div>
   ${list.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Sabor</th><th class="r">Cant.</th><th class="r">Precio u.</th><th class="r">Total</th><th>Pago</th><th>Vendedor</th><th></th></tr></thead><tbody>
-  ${list.map(v=>`<tr><td class="num">${fmtDate(v.fecha)}</td><td>${esc(clientName(v.clienteId))}</td><td>${esc(prodName(v.productoId))}</td><td class="r num">${v.cantidad}</td><td class="r num">${money(v.precioUnit)}</td><td class="r num">${money(ventaTotal(v))}${Number(v.descuento)?`<br><span class="sub" title="Precio de lista ${money(ventaBruto(v))}">−${money(v.descuento)} desc.</span>`:''}</td><td>${esFiado(v)?'<span class="pill bad">Debe</span>':esc(v.medio||'')+(v.cobrado?' <span class="sub">(fiado, cobrado '+fmtDate(v.cobrado)+')</span>':'')}</td><td>${esc(userName(v.vendedor))}</td>
+  ${list.map(v=>`<tr><td class="num">${fmtDate(v.fecha)}</td><td>${esc(clientName(v.clienteId))}</td><td>${flDot(prodName(v.productoId))}${esc(prodName(v.productoId))}</td><td class="r num">${v.cantidad}</td><td class="r num">${money(v.precioUnit)}</td><td class="r num">${money(ventaTotal(v))}${Number(v.descuento)?`<br><span class="sub" title="Precio de lista ${money(ventaBruto(v))}">−${money(v.descuento)} desc.</span>`:''}</td><td>${esFiado(v)?'<span class="pill bad">Debe</span>':esc(v.medio||'')+(v.cobrado?' <span class="sub">(fiado, cobrado '+fmtDate(v.cobrado)+')</span>':'')}</td><td>${esc(userName(v.vendedor))}</td>
   <td class="r">${(admin||v.vendedor===S.me)? delBtn('ventas',v.id) : ''}</td></tr>`).join('')}</tbody></table></div>`:`<p class="empty">No hay ventas en este período. Cargá la primera arriba.</p>`}
   </section>`;
 }
@@ -535,7 +539,7 @@ function viewStock(){
   ${prods.length?`<div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th>Modelo</th><th class="r">Costo US$</th><th class="r">Costo $</th><th class="r">Precio</th><th class="r">Vendidas</th><th class="r">Stock</th><th>Por precio</th><th>Estado</th>${admin?'<th></th>':''}</tr></thead><tbody>
   ${prods.map(p=>{const s=stockOf(p.id); const st= s<=0?['Sin stock','bad']: s<=(Number(p.stockMin)||0)?['Reponer','warn']:['OK','ok'];
     return `<tr><td>${admin&&S.renProd===p.id?`<span class="split" style="flex-wrap:nowrap"><input id="ren-in" maxlength="50" value="${esc(p.sabor)}" style="width:160px" aria-label="Nuevo nombre"><button class="btn sm" data-ren-save="${p.id}">Guardar</button><button class="btn ghost sm" data-ren-cancel>Cancelar</button></span>`
-      :`<b>${esc(p.sabor)}</b>${admin?` <button class="btn ghost sm" data-ren="${p.id}" aria-label="Cambiar nombre de ${esc(p.sabor)}" title="Cambiar nombre">✏️</button>`:''}`}</td><td class="sub">${esc(p.modelo||'')} ${p.puffs?`· ${n0.format(p.puffs)} puffs`:''}</td>
+      :`${flDot(p.sabor)}<b>${esc(p.sabor)}</b>${admin?` <button class="btn ghost sm" data-ren="${p.id}" aria-label="Cambiar nombre de ${esc(p.sabor)}" title="Cambiar nombre">✏️</button>`:''}`}</td><td class="sub">${esc(p.modelo||'')} ${p.puffs?`· ${n0.format(p.puffs)} puffs`:''}</td>
     <td class="r">${admin?`<input class="num" style="width:84px;text-align:right" type="number" min="0" step="0.01" data-usd="${p.id}" value="${Number(p.costoUSD)||''}" placeholder="US$" aria-label="Costo en dólares de ${esc(p.sabor)}">`:(p.costoUSD?usd(p.costoUSD):'—')}</td>
     <td class="r">${admin?`<input class="num" style="width:96px;text-align:right" type="number" min="0" data-edit="${p.id}" data-f="costo" value="${Number(p.costo)||''}" placeholder="$" aria-label="Costo de ${esc(p.sabor)}">`:money(p.costo)}${p.costoUSD&&p.tc?`<br><span class="sub num" style="white-space:nowrap">× ${money(p.tc)}</span>`:''}</td>
     <td class="r">${admin?`<input class="num" style="width:96px;text-align:right" type="number" min="0" data-edit="${p.id}" data-f="precio" value="${Number(p.precio)||''}" placeholder="$" aria-label="Precio de ${esc(p.sabor)}">`:money(p.precio)}</td>
@@ -772,7 +776,7 @@ function viewCompras(){
     <p class="sub">La cotización es el promedio entre compra y venta del blue (la misma que muestra DolarHoy). Si pagaste a otro valor, escribilo en "Dólar blue". Queda guardada en cada compra.</p>`:''}`:`<p class="note">Solo el administrador registra compras de mercadería.</p>`}</section>
   <section class="panel"><div class="panel-head"><div><h2>Compras</h2><span class="sub num">Invertido: ${money(inv)}${invUsd?` · ${usd(invUsd)} en compras en dólares`:''}</span></div></div>
   ${list.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Sabor</th><th class="r">Cant.</th><th class="r">Costo u.</th><th class="r">Precio u.</th><th class="r">Total</th><th>Cargó</th>${admin?'<th></th>':''}</tr></thead><tbody>
-  ${list.map(c=>`<tr><td class="num">${fmtDate(c.fecha)}</td><td>${esc(prodName(c.productoId))}</td><td class="r num">${c.cantidad}</td><td class="r">${admin?cInput(c,'costoUnit'):money(c.costoUnit)}${c.costoUSD?`<br><span class="sub num" style="white-space:nowrap">${usd(c.costoUSD)} × ${money(c.tc)}</span>`:''}</td><td class="r">${admin?cInput(c,'precioUnit'):money(c.precioUnit!=null?c.precioUnit:S.prods[c.productoId]?.precio)}</td><td class="r num">${money((c.cantidad||0)*(c.costoUnit||0))}</td><td>${esc(userName(c.vendedor))}</td>${admin?`<td class="r">${delBtn('compras',c.id)}</td>`:''}</tr>`).join('')}
+  ${list.map(c=>`<tr><td class="num">${fmtDate(c.fecha)}</td><td>${flDot(prodName(c.productoId))}${esc(prodName(c.productoId))}</td><td class="r num">${c.cantidad}</td><td class="r">${admin?cInput(c,'costoUnit'):money(c.costoUnit)}${c.costoUSD?`<br><span class="sub num" style="white-space:nowrap">${usd(c.costoUSD)} × ${money(c.tc)}</span>`:''}</td><td class="r">${admin?cInput(c,'precioUnit'):money(c.precioUnit!=null?c.precioUnit:S.prods[c.productoId]?.precio)}</td><td class="r num">${money((c.cantidad||0)*(c.costoUnit||0))}</td><td>${esc(userName(c.vendedor))}</td>${admin?`<td class="r">${delBtn('compras',c.id)}</td>`:''}</tr>`).join('')}
   </tbody></table></div>`:`<p class="empty">Sin reposiciones registradas.</p>`}</section>`;
 }
 
@@ -830,7 +834,7 @@ function viewCaja(){
     let run=sc.inicial; rows.forEach(r=>{ run+=r.monto; r.saldo=run; }); rows.reverse();
   }
   const opt=(arr,sel)=>arr.map(t=>`<option ${sel===t?'selected':''}>${t}</option>`).join('');
-  return `<div class="panel-head"><div><h2 style="font-size:22px;font-weight:800">Cuenta</h2><span class="sub">Saldo de Mercado Pago / transferencias: suma sola las ventas cobradas por esos medios y resta lo que cargues acá.</span></div></div>
+  return `<div class="panel-head"><div><h2 class="page-title">Cuenta</h2><span class="sub">Saldo de Mercado Pago / transferencias: suma sola las ventas cobradas por esos medios y resta lo que cargues acá.</span></div></div>
   ${sc?`<section class="kpis">
     <div class="kpi"><span class="l">Saldo en cuenta</span><span class="v num">${money(sc.total)}</span><span class="h">Al día de hoy</span></div>
     <div class="kpi"><span class="l">Saldo anterior</span><span class="v num">${money(sc.inicial)}</span><span class="h">Antes del ${fmtDate(sc.desde)}</span></div>
