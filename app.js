@@ -842,7 +842,33 @@ function viewCuenta(){
     <label>Contraseña nueva<input id="pw-new" type="password" required minlength="6" autocomplete="new-password"></label>
     <button class="btn" type="submit">Cambiar contraseña</button>
   </form></section>
+  ${me?.rol==='admin'?`<section class="panel" style="max-width:520px"><div class="panel-head"><div><h2>Backup</h2><span class="sub">Descargá una copia de todo en Excel: ventas, compras, clientes, stock, movimientos de la cuenta y visitas al catálogo.</span></div></div>
+    <button class="btn" id="btn-backup" type="button">Descargar backup en Excel</button>
+    <p class="sub" style="margin:0">${(()=>{ const t=Number(me?.ultimoBackup)||0; if(!t) return 'Todavía no descargaste ningún backup.'; const d=Math.floor((Date.now()-t)/86400000); return `Último backup: ${new Date(t).toLocaleDateString('es-AR')}${d>=7?` (hace ${d} días, conviene bajar uno nuevo)`:''}.`; })()} Guardalo en tu Drive o mandátelo por mail.</p>
+  </section>`:''}
 `;
+}
+
+// ---------- backup en Excel ----------
+function loadXLSX(){ if(window.XLSX) return Promise.resolve(window.XLSX); return new Promise((ok,bad)=>{ const sc=document.createElement('script'); sc.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; sc.onload=()=>ok(window.XLSX); sc.onerror=()=>bad(new Error('xlsx')); document.head.appendChild(sc); }); }
+async function hacerBackup(btn){
+  btn.disabled=true; const txt=btn.textContent; btn.textContent='Armando el archivo…';
+  try{
+    const X=await loadXLSX(); const wb=X.utils.book_new();
+    const add=(nombre, filas)=>{ const ws=X.utils.json_to_sheet(filas.length?filas:[{'(vacío)':''}]); X.utils.book_append_sheet(wb, ws, nombre); };
+    const byFecha=(a,b)=>String(a.fecha||'').localeCompare(String(b.fecha||''));
+    add('Ventas', Object.values(S.ventas).sort(byFecha).map(v=>({Fecha:v.fecha, Cliente:clientName(v.clienteId), Sabor:prodName(v.productoId), Cantidad:Number(v.cantidad)||0, 'Precio unitario':Number(v.precioUnit)||0, Descuento:Number(v.descuento)||0, Total:ventaTotal(v), 'Costo unitario':Number(v.costoUnit)||0, Ganancia:ventaGanancia(v), 'Medio de pago':v.medio||'', 'Debe (fiado)':esFiado(v)?'Sí':'', 'Cobrado el':v.cobrado||'', 'Vino del catálogo':v.catalogo?'Sí':'', Vendedor:userName(v.vendedor), Pedido:v.pedidoId||''})));
+    add('Compras', Object.values(S.compras).sort(byFecha).map(c=>({Fecha:c.fecha, Sabor:prodName(c.productoId), Cantidad:Number(c.cantidad)||0, 'Costo unitario $':Number(c.costoUnit)||0, 'Costo unitario US$':Number(c.costoUSD)||'', 'Dólar usado':Number(c.tc)||'', 'Precio de venta':Number(c.precioUnit)||'', 'Total $':(Number(c.cantidad)||0)*(Number(c.costoUnit)||0), Cargó:userName(c.vendedor)})));
+    add('Clientes', Object.values(S.clients).sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre))).map(c=>({Nombre:c.nombre, Contacto:c.contacto||'', 'Alta':c.creado?new Date(c.creado).toLocaleDateString('es-AR'):''})));
+    add('Stock', Object.values(S.prods).sort((a,b)=>String(a.sabor).localeCompare(String(b.sabor))).map(p=>({Sabor:p.sabor, Modelo:p.modelo||'', Puffs:Number(p.puffs)||'', 'Stock actual':stockOf(p.id), 'Stock inicial':Number(p.stockInicial)||0, 'Stock mínimo':Number(p.stockMin)||0, 'Costo $':Number(p.costo)||0, 'Costo US$':Number(p.costoUSD)||'', 'Precio':Number(p.precio)||0})));
+    const sc=saldoCuenta();
+    add('Cuenta', [ ...(sc?[{Fecha:sc.desde, Tipo:'Saldo anterior', Detalle:'', Monto:sc.inicial}]:[]), ...movsCuenta().slice().reverse().map(m=>({Fecha:m.fecha, Tipo:m.tipo, Detalle:m.concepto||'', Monto:movSigno(m)*(Number(m.monto)||0)})) ]);
+    add('Visitas catálogo', Object.entries(S.stats||{}).sort((a,b)=>a[0].localeCompare(b[0])).map(([d,o])=>({Fecha:d, Visitas:Number(o.visitas)||0, 'Personas nuevas':Number(o.nuevos)||0, 'Tocaron Pedir':Number(o.pedidos)||0})));
+    X.writeFile(wb, `Backup Control Vapes ${today()}.xlsx`);
+    S.db.doc('usuarios/'+S.me).update({ultimoBackup:Date.now()}).catch(()=>{});
+    toast('Backup descargado');
+  }catch(e){ console.error(e); toast('No se pudo armar el backup. Probá de nuevo.'); }
+  btn.disabled=false; btn.textContent=txt;
 }
 
 function viewCaja(){
@@ -1139,6 +1165,7 @@ function bindApp(){
   document.querySelectorAll('[data-mov-del-yes]').forEach(b=>b.onclick=()=>{ const id=b.dataset.movDelYes; S.confirm=null;
     save(()=>S.db.doc('usuarios/'+cuentaOwner().id).update({['cuentaMovs.'+id]:firebase.firestore.FieldValue.delete()}), 'Movimiento borrado'); });
   document.querySelectorAll('[data-goto-cuenta]').forEach(a=>a.onclick=e=>{ e.preventDefault(); S.tab='caja'; ssSet('cv_tab','caja'); render(); window.scrollTo(0,0); });
+  const bbk=document.getElementById('btn-backup'); if(bbk) bbk.onclick=()=>hacerBackup(bbk);
   const fpw=document.getElementById('f-pass');
   if(fpw) fpw.onsubmit=async e=>{ e.preventDefault();
     const user=S.auth.currentUser; const oldp=document.getElementById('pw-old').value, newp=document.getElementById('pw-new').value;
