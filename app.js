@@ -175,11 +175,19 @@ function viewBulk(){
 const esFiado = v => v.medio==='Fiado';
 // ---------- saldo en cuenta (solo admin) ----------
 const CUENTA_MEDIOS = ['Mercado Pago','Transferencia'];
+const cuentaOwner = () => Object.values(S.users).find(u=>u.rol==='admin'&&(u.cuenta||u.cuentaMovs)) || S.users[S.me];
 const cuentaCfg = () => { const a=Object.values(S.users).find(u=>u.rol==='admin'&&u.cuenta); return a?a.cuenta:null; };
+const MOV_SALIDAS = ['Retiro para mí','Gasto','Envío','Comisión Mercado Pago','Pago a proveedor','Otra salida'];
+const MOV_ENTRADAS = ['Aporte / ingreso','Otra entrada'];
+const movsCuenta = () => Object.entries(cuentaOwner()?.cuentaMovs||{}).map(([id,m])=>({id,...m})).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')||(b.creado||0)-(a.creado||0));
+const movSigno = m => MOV_ENTRADAS.includes(m.tipo) ? 1 : -1;
+const movsNeto = desde => movsCuenta().filter(m=>!desde||(m.fecha||'')>=desde).reduce((a,m)=>a+movSigno(m)*(Number(m.monto)||0),0);
 const ventaFechaCobro = v => v.cobrado || v.fecha;
 const cobrosCuenta = desde => Object.values(S.ventas).filter(v=>!esFiado(v) && CUENTA_MEDIOS.includes(v.medio) && (!desde || (ventaFechaCobro(v)||'')>=desde)).reduce((a,v)=>a+ventaTotal(v),0);
 const primeraVenta = () => Object.values(S.ventas).map(v=>v.fecha).filter(Boolean).sort()[0] || today();
-const saldoCuenta = () => { const c=cuentaCfg(); if(!c) return null; const cob=cobrosCuenta(c.desde); return {inicial:Number(c.saldoInicial)||0, cobros:cob, total:(Number(c.saldoInicial)||0)+cob, desde:c.desde}; };
+const saldoCuenta = () => { const c=cuentaCfg(); if(!c) return null; const cob=cobrosCuenta(c.desde); const ms=movsCuenta().filter(m=>(m.fecha||'')>=c.desde);
+  const sal=ms.filter(m=>movSigno(m)<0).reduce((a,m)=>a+(Number(m.monto)||0),0), ent=ms.filter(m=>movSigno(m)>0).reduce((a,m)=>a+(Number(m.monto)||0),0);
+  const ini=Number(c.saldoInicial)||0; return {inicial:ini, cobros:cob, salidas:sal, entradas:ent, total:ini+cob+ent-sal, desde:c.desde}; };
 function deudas(){
   const m={};
   for(const v of Object.values(S.ventas)){ if(!esFiado(v)) continue;
@@ -366,11 +374,11 @@ function viewLogin(){
 function viewShell(allReady){
   const me=S.users[S.me]; const admin=me?.rol==='admin';
   const tabs=[['resumen','Resumen'],['ventas','Ventas'],['stock','Stock'],['clientes','Clientes'],['compras','Compras'],['fiado','Fiado'],['sabores','Clientes × sabor']];
-  if(admin) tabs.push(['asesor','Asesor'],['catalogo','Catálogo'],['usuarios','Usuarios']);
+  if(admin) tabs.push(['caja','Cuenta'],['asesor','Asesor'],['catalogo','Catálogo'],['usuarios','Usuarios']);
   tabs.push(['cuenta','Mi cuenta']);
   if(!tabs.some(t=>t[0]===S.tab)) S.tab='resumen';
   const body = !allReady ? `<div class="panel"><p class="empty">Cargando datos…</p></div>` :
-    ({resumen:viewResumen, ventas:viewVentas, stock:viewStock, clientes:viewClientes, compras:viewCompras, fiado:viewFiado, sabores:viewMatrix, usuarios:viewUsuarios, catalogo:viewCatalogo, asesor:viewAsesor, cuenta:viewCuenta})[S.tab]();
+    ({resumen:viewResumen, ventas:viewVentas, stock:viewStock, clientes:viewClientes, compras:viewCompras, fiado:viewFiado, sabores:viewMatrix, usuarios:viewUsuarios, catalogo:viewCatalogo, asesor:viewAsesor, cuenta:viewCuenta, caja:viewCaja})[S.tab]();
   return `<header class="top"><div class="top-in">
       <div class="top-row"><div class="brand"><div class="brand-mark">CV</div><h1>Control Vapes</h1></div>
         <div class="who"><span><b>${esc(me?.nombre||me?.usuario||'')}</b> · ${admin?'Administrador':'Vendedor'}</span><button class="btn ghost sm" id="logout">Salir</button></div></div>
@@ -431,7 +439,7 @@ function viewResumen(){
     <div class="kpi"><span class="l">Clientes que compraron</span><span class="v num">${clientesPer}</span><span class="h">${Object.keys(S.clients).length} en total</span></div>
     <div class="kpi"><span class="l">Stock disponible</span><span class="v num">${n0.format(stockTot)}</span><span class="h">${valorStock?`Vale ${money(valorStock)} a precio de venta`:'Cargá precios en Stock'}</span></div>
     <div class="kpi"><span class="l">Te deben (fiado)</span><span class="v num" style="color:${totalDeuda()?'var(--bad)':'inherit'}">${money(totalDeuda())}</span><span class="h">${deudas().length} cliente${deudas().length===1?'':'s'} · ver pestaña Fiado</span></div>
-    ${S.users[S.me]?.rol==='admin'?(()=>{ const sc=saldoCuenta(); return sc?`<div class="kpi"><span class="l">Saldo en cuenta</span><span class="v num">${money(sc.total)}</span><span class="h">Saldo anterior ${money(sc.inicial)} + cobros ${money(sc.cobros)} · <a href="#" data-goto-cuenta>ajustar</a></span></div>`:`<div class="kpi"><span class="l">Saldo en cuenta</span><span class="v num" style="color:var(--muted,#888)">—</span><span class="h"><a href="#" data-goto-cuenta>Cargar saldo en Mi cuenta</a></span></div>`; })():''}
+    ${S.users[S.me]?.rol==='admin'?(()=>{ const sc=saldoCuenta(); return sc?`<div class="kpi"><span class="l">Saldo en cuenta</span><span class="v num">${money(sc.total)}</span><span class="h">Cobros ${money(sc.cobros)}${sc.salidas?` · salidas −${money(sc.salidas)}`:''} · <a href="#" data-goto-cuenta>ver movimientos</a></span></div>`:`<div class="kpi"><span class="l">Saldo en cuenta</span><span class="v num" style="color:var(--muted,#888)">—</span><span class="h"><a href="#" data-goto-cuenta>Cargar saldo</a></span></div>`; })():''}
     <div class="kpi"><span class="l">Sabores a reponer</span><span class="v num" style="color:${reponer?'var(--warn)':'inherit'}">${reponer}</span><span class="h">Stock en el mínimo o debajo</span></div>
   </section>
   <div class="grid2">
@@ -806,15 +814,54 @@ function viewCuenta(){
     <label>Contraseña nueva<input id="pw-new" type="password" required minlength="6" autocomplete="new-password"></label>
     <button class="btn" type="submit">Cambiar contraseña</button>
   </form></section>
-  ${me?.rol==='admin'?(()=>{ const sc=saldoCuenta(); const desde=sc?.desde||primeraVenta();
-  return `<section class="panel" style="max-width:520px"><div class="panel-head"><div><h2>Saldo en cuenta</h2><span class="sub">Lo que tenés en la cuenta (Mercado Pago / transferencias). Se suma solo con cada venta cobrada por esos medios.</span></div></div>
-  ${sc?`<p class="num" style="margin:0 0 10px">Saldo actual: <b>${money(sc.total)}</b><br><span class="sub">Saldo anterior ${money(sc.inicial)} + cobros desde el ${fmtDate(sc.desde)}: ${money(sc.cobros)}</span></p>`:''}
-  <form class="form" id="f-saldo" autocomplete="off" style="grid-template-columns:1fr 1fr">
-    <label>Saldo real en la cuenta hoy<input id="sc-real" type="number" min="0" step="1" required placeholder="Ej: 908000" value="${sc?sc.total:''}"></label>
-    <label>Ventas cobradas desde<input id="sc-desde" type="date" required value="${desde}"></label>
-    <button class="btn" type="submit" style="grid-column:1/-1">Guardar saldo</button>
-  </form>
-  <p class="note">Poné lo que te figura hoy en la cuenta, con las ventas ya incluidas. La planilla calcula sola el saldo anterior restando los cobros por Mercado Pago y Transferencia desde esa fecha. El efectivo y las compras no se tocan.</p></section>`; })():''}`;
+`;
+}
+
+function viewCaja(){
+  const sc=saldoCuenta(); const desde=sc?.desde||primeraVenta(); const mf=S.mf||{};
+  const movs=movsCuenta();
+  // historial: cobros + movimientos, con saldo acumulado
+  let rows=[];
+  if(sc){
+    Object.values(S.ventas).filter(v=>!esFiado(v)&&CUENTA_MEDIOS.includes(v.medio)&&(ventaFechaCobro(v)||'')>=sc.desde)
+      .forEach(v=>rows.push({fecha:ventaFechaCobro(v), creado:v.creado||0, det:`Venta · ${clientName(v.clienteId)} · ${prodName(v.productoId)}${v.cobrado?' (fiado cobrado)':''}`, tipo:v.medio, monto:ventaTotal(v)}));
+    movs.filter(m=>(m.fecha||'')>=sc.desde).forEach(m=>rows.push({fecha:m.fecha, creado:m.creado||0, det:m.concepto||'', tipo:m.tipo, monto:movSigno(m)*(Number(m.monto)||0), mov:m}));
+    rows.sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||'')||a.creado-b.creado);
+    let run=sc.inicial; rows.forEach(r=>{ run+=r.monto; r.saldo=run; }); rows.reverse();
+  }
+  const opt=(arr,sel)=>arr.map(t=>`<option ${sel===t?'selected':''}>${t}</option>`).join('');
+  return `<div class="panel-head"><div><h2 style="font-size:22px;font-weight:800">Cuenta</h2><span class="sub">Saldo de Mercado Pago / transferencias: suma sola las ventas cobradas por esos medios y resta lo que cargues acá.</span></div></div>
+  ${sc?`<section class="kpis">
+    <div class="kpi"><span class="l">Saldo en cuenta</span><span class="v num">${money(sc.total)}</span><span class="h">Al día de hoy</span></div>
+    <div class="kpi"><span class="l">Saldo anterior</span><span class="v num">${money(sc.inicial)}</span><span class="h">Antes del ${fmtDate(sc.desde)}</span></div>
+    <div class="kpi"><span class="l">Cobros de ventas</span><span class="v num" style="color:var(--ok,inherit)">+${money(sc.cobros)}</span><span class="h">Mercado Pago y Transferencia</span></div>
+    <div class="kpi"><span class="l">Salidas</span><span class="v num" style="color:${sc.salidas?'var(--bad)':'inherit'}">−${money(sc.salidas)}</span><span class="h">${sc.entradas?`Entradas extra +${money(sc.entradas)}`:'Retiros, gastos, envíos…'}</span></div>
+  </section>`:''}
+  <div class="grid2">
+  <section class="panel"><div class="panel-head"><div><h2>Cargar movimiento</h2><span class="sub">Plata que sale o entra a la cuenta y no es una venta</span></div></div>
+    ${sc?`<form class="form" id="f-mov" autocomplete="off" style="grid-template-columns:1fr 1fr">
+      <label>Fecha<input id="m-fecha" type="date" required value="${mf.fecha||today()}"></label>
+      <label>Tipo<select id="m-tipo"><optgroup label="Sale de la cuenta">${opt(MOV_SALIDAS,mf.tipo||'Retiro para mí')}</optgroup><optgroup label="Entra a la cuenta">${opt(MOV_ENTRADAS,mf.tipo)}</optgroup></select></label>
+      <label>Monto<input id="m-monto" type="number" min="1" step="1" required placeholder="$"></label>
+      <label>Detalle<input id="m-concepto" type="text" maxlength="80" placeholder="Opcional"></label>
+      <button class="btn" type="submit" style="grid-column:1/-1">Guardar movimiento</button>
+    </form>`:`<p class="empty">Primero cargá el saldo de la cuenta (al costado).</p>`}
+  </section>
+  <section class="panel"><div class="panel-head"><div><h2>Ajustar saldo</h2><span class="sub">Si no coincide con lo que ves en la cuenta, poné el saldo real</span></div></div>
+    <form class="form" id="f-saldo" autocomplete="off" style="grid-template-columns:1fr 1fr">
+      <label>Saldo real en la cuenta hoy<input id="sc-real" type="number" min="0" step="1" required placeholder="Ej: 908000" value="${sc?sc.total:''}"></label>
+      <label>Contar desde<input id="sc-desde" type="date" required value="${desde}"></label>
+      <button class="btn ghost" type="submit" style="grid-column:1/-1">Guardar saldo</button>
+    </form>
+    <p class="note">Recalcula el saldo anterior restando los cobros y movimientos desde esa fecha. El efectivo y las compras no se tocan.</p>
+  </section>
+  </div>
+  ${sc?`<section class="panel"><div class="panel-head"><h2>Movimientos</h2><span class="sub">${rows.length} desde el ${fmtDate(sc.desde)}</span></div>
+    ${rows.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Detalle</th><th>Tipo</th><th class="r">Monto</th><th class="r">Saldo</th><th></th></tr></thead><tbody>
+    ${rows.map(r=>`<tr><td class="num">${fmtDate(r.fecha)}</td><td>${esc(r.det)||'<span class="sub">—</span>'}</td><td>${esc(r.tipo)}</td><td class="r num" style="color:${r.monto<0?'var(--bad)':'inherit'}">${r.monto<0?'−':'+'}${money(Math.abs(r.monto))}</td><td class="r num">${money(r.saldo)}</td>
+      <td class="r">${r.mov?(S.confirm==='mov/'+r.mov.id?`<span class="inline-confirm">¿Borrar? <button class="btn danger sm" data-mov-del-yes="${r.mov.id}">Sí</button><button class="btn ghost sm" data-del-no>No</button></span>`:`<button class="btn ghost sm" data-mov-del="${r.mov.id}">Borrar</button>`):''}</td></tr>`).join('')}
+    <tr><td class="num">${fmtDate(sc.desde)}</td><td><b>Saldo anterior</b></td><td></td><td></td><td class="r num"><b>${money(sc.inicial)}</b></td><td></td></tr>
+    </tbody></table></div>`:`<p class="empty">Sin movimientos todavía.</p>`}</section>`:''}`;
 }
 
 // ---------- events ----------
@@ -1048,10 +1095,20 @@ function bindApp(){
   if(fsc) fsc.onsubmit=e=>{ e.preventDefault();
     const real=Number(document.getElementById('sc-real').value); const desde=document.getElementById('sc-desde').value;
     if(!(real>=0) || !desde) return toast('Completá el saldo y la fecha');
-    const inicial=real-cobrosCuenta(desde);
-    save(()=>S.db.doc('usuarios/'+S.me).update({cuenta:{saldoInicial:inicial, desde, actualizado:Date.now()}}), `Saldo guardado: ${money(real)} (anterior ${money(inicial)})`);
+    const inicial=real-cobrosCuenta(desde)-movsNeto(desde);
+    save(()=>S.db.doc('usuarios/'+cuentaOwner().id).update({cuenta:{saldoInicial:inicial, desde, actualizado:Date.now()}}), `Saldo guardado: ${money(real)} (anterior ${money(inicial)})`);
   };
-  document.querySelectorAll('[data-goto-cuenta]').forEach(a=>a.onclick=e=>{ e.preventDefault(); S.tab='cuenta'; ssSet('cv_tab','cuenta'); render(); window.scrollTo(0,0); });
+  const fmov=document.getElementById('f-mov');
+  if(fmov) fmov.onsubmit=e=>{ e.preventDefault();
+    const fecha=document.getElementById('m-fecha').value, tipo=document.getElementById('m-tipo').value, monto=Number(document.getElementById('m-monto').value), concepto=document.getElementById('m-concepto').value.trim();
+    if(!fecha||!(monto>0)) return toast('Completá fecha y monto');
+    const id=S.db.collection('_').doc().id; S.mf={fecha, tipo};
+    save(()=>S.db.doc('usuarios/'+cuentaOwner().id).update({['cuentaMovs.'+id]:{fecha, tipo, monto, concepto, por:S.me, creado:Date.now()}}), `${MOV_ENTRADAS.includes(tipo)?'Entrada':'Salida'} de ${money(monto)} guardada`);
+  };
+  document.querySelectorAll('[data-mov-del]').forEach(b=>b.onclick=()=>{ S.confirm='mov/'+b.dataset.movDel; render(); });
+  document.querySelectorAll('[data-mov-del-yes]').forEach(b=>b.onclick=()=>{ const id=b.dataset.movDelYes; S.confirm=null;
+    save(()=>S.db.doc('usuarios/'+cuentaOwner().id).update({['cuentaMovs.'+id]:firebase.firestore.FieldValue.delete()}), 'Movimiento borrado'); });
+  document.querySelectorAll('[data-goto-cuenta]').forEach(a=>a.onclick=e=>{ e.preventDefault(); S.tab='caja'; ssSet('cv_tab','caja'); render(); window.scrollTo(0,0); });
   const fpw=document.getElementById('f-pass');
   if(fpw) fpw.onsubmit=async e=>{ e.preventDefault();
     const user=S.auth.currentUser; const oldp=document.getElementById('pw-old').value, newp=document.getElementById('pw-new').value;
