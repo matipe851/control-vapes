@@ -401,6 +401,24 @@ function barList(rows, fmt, cls='', flavor=false){
   return `<div class="bars">${rows.map(([n,v,extra])=>`<div class="bar-row"><span class="n" title="${esc(n)}">${flavor?flDot(n):''}${esc(n)}</span><div class="bar ${cls}"><i style="width:${(v/max*100).toFixed(1)}%${flavor&&flavorColor(n)?`;background:${flavorColor(n)}`:''}"></i></div><span class="num">${fmt(v)}${extra?` <span class="sub">${extra}</span>`:''}</span></div>`).join('')}</div>`;
 }
 
+function viewVisitas(){
+  const st=S.stats||{}; const dias=Object.keys(st).filter(inPeriod);
+  const sum=k=>dias.reduce((a,d)=>a+(Number(st[d][k])||0),0);
+  const vis=sum('visitas'), ped=sum('pedidos'), nue=sum('nuevos');
+  const t=today(); const last=[]; for(let i=13;i>=0;i--){ const d=new Date(dParse(t)); d.setDate(d.getDate()-i); const k=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; last.push({k, l:i===0?'hoy':String(d.getDate()), v:Number(st[k]?.visitas)||0, p:Number(st[k]?.pedidos)||0}); }
+  const mx=Math.max(1,...last.map(x=>x.v));
+  return `<section class="panel"><div class="panel-head"><div><h2>Catálogo</h2><span class="sub">Visitas a vapdm-ba.web.app en el período. Una visita por celular cada 3 horas</span></div></div>
+    ${S.stats==null?`<p class="empty">Todavía no hay datos de visitas.</p>`:`<div class="kpis" style="border:0">
+      <div class="kpi"><span class="l">Visitas</span><span class="v num">${n0.format(vis)}</span><span class="h">Hoy: ${n0.format(Number(st[t]?.visitas)||0)}</span></div>
+      <div class="kpi"><span class="l">Personas nuevas</span><span class="v num">${n0.format(nue)}</span><span class="h">Celulares que entraron por primera vez</span></div>
+      <div class="kpi"><span class="l">Tocaron Pedir</span><span class="v num">${n0.format(ped)}</span><span class="h">Abrieron WhatsApp con un pedido</span></div>
+      <div class="kpi"><span class="l">Conversión</span><span class="v num">${vis?Math.round(ped/vis*100):0}%</span><span class="h">De cada 100 visitas, cuántas piden</span></div>
+    </div>
+    <div class="months" style="height:130px">${last.map((x,i)=>`<div class="mcol ${i===13?'cur':''}" title="${fmtDate(x.k)}: ${x.v} visitas, ${x.p} pedidos"><span class="val num">${x.v||''}</span><div class="stick"><i style="height:${(x.v/mx*100).toFixed(1)}%"></i></div><span>${x.l}</span></div>`).join('')}</div>
+    <p class="sub" style="margin:0">Últimos 14 días. Para que tus propias visitas no cuenten, abrí una vez <b>vapdm-ba.web.app/?nocontar</b> desde tu celular.</p>`}
+  </section>`;
+}
+
 function viewResumen(){
   const vs=Object.values(S.ventas).filter(v=>inPeriod(v.fecha));
   const total=vs.reduce((a,v)=>a+ventaTotal(v),0);
@@ -446,6 +464,7 @@ function viewResumen(){
     ${S.users[S.me]?.rol==='admin'?(()=>{ const sc=saldoCuenta(); return sc?`<div class="kpi"><span class="l">Saldo en cuenta</span><span class="v num">${money(sc.total)}</span><span class="h">Cobros ${money(sc.cobros)}${sc.salidas?` · salidas −${money(sc.salidas)}`:''} · <a href="#" data-goto-cuenta>ver movimientos</a></span></div>`:`<div class="kpi"><span class="l">Saldo en cuenta</span><span class="v num" style="color:var(--muted,#888)">—</span><span class="h"><a href="#" data-goto-cuenta>Cargar saldo</a></span></div>`; })():''}
     <div class="kpi"><span class="l">Sabores a reponer</span><span class="v num" style="color:${reponer?'var(--warn)':'inherit'}">${reponer}</span><span class="h">Stock en el mínimo o debajo</span></div>
   </section>
+  ${S.users[S.me]?.rol==='admin'?viewVisitas():''}
   <div class="grid2">
     <section class="panel"><div class="panel-head"><h2>Sabores más vendidos</h2><span class="sub">unidades</span></div>${barList(rankSabor, n0.format, '', true)}</section>
     <section class="panel"><div class="panel-head"><h2>${useUnits?'Unidades':'Facturación'} por mes</h2><span class="sub">últimos 6 meses</span></div>
@@ -1143,7 +1162,8 @@ function startData(uid){
     const m={}; snap.docs.forEach(d=>{ m[d.id]={id:d.id, ...d.data()}; }); S.users=m;
     const first=!S.ready.usuarios; S.ready.usuarios=true;
     if(first && m[uid]){ sub('productos','prods'); sub('clientes','clients'); sub('ventas','ventas'); sub('compras','compras');
-      unsubs.push(S.db.doc('catalogo/actual').onSnapshot(d=>{ S.catalogo=d.exists?d.data():null; S.catReady=true; S.catErr=null; scheduleRender(); }, err=>{ S.catErr=err.code||'error'; S.catReady=true; scheduleRender(); })); }
+      unsubs.push(S.db.doc('catalogo/actual').onSnapshot(d=>{ S.catalogo=d.exists?d.data():null; S.catReady=true; S.catErr=null; scheduleRender(); }, err=>{ S.catErr=err.code||'error'; S.catReady=true; scheduleRender(); }));
+      if(m[uid].rol==='admin') unsubs.push(S.db.collection('stats').onSnapshot(snap=>{ const o={}; snap.docs.forEach(d=>o[d.id]=d.data()); S.stats=o; scheduleRender(); }, err=>{ console.error('stats',err); S.stats=null; })); }
     scheduleRender();
   }, err=>{ S.ready.usuarios=true; S.users={}; scheduleRender(); }));
   render();
