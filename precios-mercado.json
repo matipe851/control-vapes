@@ -1,12 +1,12 @@
 {
- "actualizado": "2026-10-16T15:32:37Z",
- "minimo": 29900,
- "promedio": 30945,
+ "actualizado": "2026-10-17T14:25:04Z",
+ "minimo": 31990,
+ "promedio": 32445,
  "tiendas": [
   {
    "tienda": "Cloud Imports",
    "url": "https://cloudimports.com.ar/productos/elfbar-ice-king-40000-grape-ice/",
-   "precio": 29900
+   "precio": 32900
   },
   {
    "tienda": "Goat Vape",
@@ -24,6 +24,11 @@
    "fecha": "2026-10-16",
    "minimo": 29900,
    "promedio": 30945
+  },
+  {
+   "fecha": "2026-10-17",
+   "minimo": 31990,
+   "promedio": 32445
   }
  ]
 }
