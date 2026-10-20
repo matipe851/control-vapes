@@ -87,7 +87,7 @@ function mensajeStock(){
   return `*${MSG_HEADER}*\n\n` + (lineas.length? lineas.join('\n') : 'Por ahora no hay sabores en stock.') + link;
 }
 // ---------- Catálogo online ----------
-const catalogoURL = () => 'https://matipe851.github.io/iceking/';
+const catalogoURL = () => 'https://vapdm-ba.web.app/';
 const catalogoActivo = () => !!(S.catalogo && S.catalogo.activo!==false && S.catalogo.telefono && !S.catErr);
 function catalogoItems(){
   return Object.values(S.prods).map(p=>{ const st=stockOf(p.id); if(st<=0) return null;
