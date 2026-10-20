@@ -423,40 +423,65 @@ function viewVisitas(){
   </section>`;
 }
 
+const OBJ_CRECER = 0.10; // objetivo = facturación del mes anterior + 10%
 function viewProyeccion(){
   const now=new Date(), y=now.getFullYear(), mo=now.getMonth(), dia=now.getDate();
   const diasMes=new Date(y,mo+1,0).getDate(), quedan=diasMes-dia;
-  const kCur=`${y}-${pad(mo+1)}`; const pd=new Date(y,mo-1,1); const kPrev=`${pd.getFullYear()}-${pad(pd.getMonth()+1)}`;
-  const cur={t:0,u:0,g:0}, prev={t:0,u:0,g:0}, prevHasta={t:0};
-  Object.values(S.ventas).forEach(v=>{ const k=v.fecha?.slice(0,7); const t=ventaTotal(v), u=Number(v.cantidad)||0, g=ventaGanancia(v);
+  const mk=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+  const kCur=mk(now); const pd=new Date(y,mo-1,1); const kPrev=mk(pd); const mPrev=MES[pd.getMonth()];
+  const cur={t:0,u:0,g:0}, prev={t:0,u:0,g:0}, prevHasta={t:0}, porMes={};
+  Object.values(S.ventas).forEach(v=>{ const k=v.fecha?.slice(0,7); if(!k) return; const t=ventaTotal(v), u=Number(v.cantidad)||0, g=ventaGanancia(v);
+    porMes[k]=(porMes[k]||0)+t;
     if(k===kCur){ cur.t+=t; cur.u+=u; cur.g+=g; }
     else if(k===kPrev){ prev.t+=t; prev.u+=u; prev.g+=g; if(Number(v.fecha.slice(8,10))<=dia) prevHasta.t+=t; } });
   const f=diasMes/dia, proy={t:cur.t*f, u:Math.round(cur.u*f), g:cur.g*f};
   const pct=(a,b)=>b?Math.round((a/b-1)*100):null;
-  const vsPrev=pct(proy.t,prev.t);
-  const cmp=vsPrev==null?'Sin ventas el mes pasado para comparar':`<span style="color:${vsPrev>=0?'var(--ok)':'var(--bad)'};font-weight:600">${vsPrev>=0?'+':''}${vsPrev}%</span> vs ${MES[pd.getMonth()]} (${money(prev.t)})`;
   const ritmo=cur.t/dia;
-  let consejo='';
-  if(prev.t && quedan>0){
-    const falta=prev.t-cur.t;
-    consejo = falta>0
-      ? `Para igualar ${MES[pd.getMonth()]} te faltan <b>${money(falta)}</b>: unos <b>${money(falta/quedan)}</b> por día en los ${quedan} día${quedan===1?'':'s'} que quedan (hoy venís a ${money(ritmo)} por día).`
-      : `Ya superaste todo ${MES[pd.getMonth()]} y quedan ${quedan} día${quedan===1?'':'s'}.`;
-  }
+  const obj=prev.t*(1+OBJ_CRECER);
   const hasta=pct(cur.t,prevHasta.t);
-  const mx=Math.max(proy.t,prev.t)||1;
+  const mx=Math.max(proy.t,obj,cur.t)||1;
   const bar=(w,c,lbl)=>`<div style="display:grid;grid-template-columns:92px 1fr auto;gap:10px;align-items:center;font-size:13px"><span class="sub">${lbl}</span><div style="background:var(--surface-2);border-radius:4px;height:10px;overflow:hidden"><i style="display:block;height:100%;width:${(w/mx*100).toFixed(1)}%;background:${c};border-radius:4px"></i></div><span class="num">${money(w)}</span></div>`;
+
+  // estado del objetivo de este mes
+  let objH='Sin ventas el mes pasado para fijarlo', consejo='';
+  if(obj){
+    const avance=Math.round(cur.t/obj*100);
+    const llega=proy.t>=obj;
+    objH = cur.t>=obj ? `<span class="pill ok">Cumplido</span> ${avance}% del objetivo`
+      : `${avance}% hecho · ${llega?'<span class="pill ok">Vas a cumplirlo</span>':'<span class="pill warn">No llegás a este ritmo</span>'}`;
+    const falta=obj-cur.t;
+    consejo = falta<=0
+      ? `Ya cumpliste el objetivo del mes${quedan?` y quedan ${quedan} día${quedan===1?'':'s'}`:''}.`
+      : (quedan>0 ? `Para cumplir el objetivo te faltan <b>${money(falta)}</b>: unos <b>${money(falta/quedan)}</b> por día en los ${quedan} día${quedan===1?'':'s'} que quedan (hoy venís a ${money(ritmo)} por día).` : '');
+  }
+
+  // historial mes a mes (últimos 6 meses + el actual)
+  const hist=[];
+  for(let i=6;i>=0;i--){ const d=new Date(y,mo-i,1), dp=new Date(y,mo-i-1,1);
+    const k=mk(d), ant=porMes[mk(dp)]||0, vend=porMes[k]||0, o=ant*(1+OBJ_CRECER);
+    hist.push({l:`${MES[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`, o, vend, actual:i===0}); }
+  const desde=hist.findIndex(h=>h.o||h.vend);
+  const filas=desde<0?[]:hist.slice(desde);
+  const cumplidos=filas.filter(h=>!h.actual&&h.o&&h.vend>=h.o).length, medibles=filas.filter(h=>!h.actual&&h.o).length;
+  const estado=h=> !h.o ? '<span class="sub">Sin objetivo</span>'
+    : h.actual ? (h.vend>=h.o?'<span class="pill ok">Cumplido</span>':'<span class="pill mid">En curso</span>')
+    : (h.vend>=h.o?'<span class="pill ok">Cumplido</span>':'<span class="pill bad">No cumplido</span>');
+  const tabla = filas.length ? `<div class="panel-head" style="margin-top:18px"><div><h2>Objetivo mes a mes</h2><span class="sub">Objetivo = facturación del mes anterior + ${Math.round(OBJ_CRECER*100)}%${medibles?` · cumpliste ${cumplidos} de ${medibles}`:''}</span></div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Mes</th><th class="r">Objetivo</th><th class="r">Vendido</th><th class="r">%</th><th>Estado</th></tr></thead><tbody>${filas.slice().reverse().map(h=>`<tr><td>${h.l}${h.actual?' <span class="sub">(este mes)</span>':''}</td><td class="r num">${h.o?money(h.o):'—'}</td><td class="r num">${money(h.vend)}</td><td class="r num">${h.o?Math.round(h.vend/h.o*100)+'%':'—'}</td><td>${estado(h)}</td></tr>`).join('')}</tbody></table></div>` : '';
+
   return `<section class="panel"><div class="panel-head"><div><h2>Proyección del mes</h2><span class="sub">${MES[mo]} · día ${dia} de ${diasMes} · según el ritmo que llevás${dia<5?' (todavía es temprano, puede variar bastante)':''}</span></div></div>
     ${cur.t||cur.u?`
     <section class="kpis" style="margin-bottom:14px">
-      <div class="kpi"><span class="l">Facturación estimada</span><span class="v num">${money(proy.t)}</span><span class="h">${cmp}</span></div>
-      <div class="kpi"><span class="l">Unidades estimadas</span><span class="v num">${n0.format(proy.u)}</span><span class="h">${prev.u?`${MES[pd.getMonth()]}: ${n0.format(prev.u)}`:'—'}</span></div>
-      <div class="kpi"><span class="l">Ganancia estimada</span><span class="v num">${money(proy.g)}</span><span class="h">${prev.g?`${MES[pd.getMonth()]}: ${money(prev.g)}`:'—'}</span></div>
-      <div class="kpi"><span class="l">Vas hasta hoy</span><span class="v num">${money(cur.t)}</span><span class="h">${hasta==null?`${money(ritmo)} por día`:`<span style="color:${hasta>=0?'var(--ok)':'var(--bad)'}">${hasta>=0?'+':''}${hasta}%</span> vs mismo día de ${MES[pd.getMonth()]}`}</span></div>
+      <div class="kpi"><span class="l">Objetivo del mes</span><span class="v num">${obj?money(obj):'—'}</span><span class="h">${objH}</span></div>
+      <div class="kpi"><span class="l">Facturación estimada</span><span class="v num">${money(proy.t)}</span><span class="h">${obj?`<span style="color:${proy.t>=obj?'var(--ok)':'var(--bad)'};font-weight:600">${proy.t>=obj?'+':'−'}${money(Math.abs(proy.t-obj))}</span> vs objetivo`:'—'}</span></div>
+      <div class="kpi"><span class="l">Vas hasta hoy</span><span class="v num">${money(cur.t)}</span><span class="h">${hasta==null?`${money(ritmo)} por día`:`<span style="color:${hasta>=0?'var(--ok)':'var(--bad)'}">${hasta>=0?'+':''}${hasta}%</span> vs mismo día de ${mPrev}`}</span></div>
+      <div class="kpi"><span class="l">Unidades estimadas</span><span class="v num">${n0.format(proy.u)}</span><span class="h">${prev.u?`${mPrev}: ${n0.format(prev.u)}`:'—'}</span></div>
+      <div class="kpi"><span class="l">Ganancia estimada</span><span class="v num">${money(proy.g)}</span><span class="h">${prev.g?`${mPrev}: ${money(prev.g)}`:'—'}</span></div>
     </section>
-    <div style="display:grid;gap:8px">${bar(cur.t,'var(--accent)','Hasta hoy')}${bar(proy.t,'color-mix(in srgb,var(--accent) 40%,var(--surface-2))','Estimado')}${prev.t?bar(prev.t,'var(--muted)',`Todo ${MES[pd.getMonth()]}`):''}</div>
+    <div style="display:grid;gap:8px">${bar(cur.t,'var(--accent)','Hasta hoy')}${bar(proy.t,'color-mix(in srgb,var(--accent) 40%,var(--surface-2))','Estimado')}${obj?bar(obj,'var(--ok)','Objetivo'):''}</div>
     ${consejo?`<p class="sub" style="margin:12px 0 0">${consejo}</p>`:''}`
-    :`<p class="empty">Todavía no hay ventas este mes. Cuando cargues la primera aparece la estimación.</p>`}
+    :`<p class="empty">Todavía no hay ventas este mes. Cuando cargues la primera aparece la estimación${obj?` (el objetivo de ${MES[mo]} es ${money(obj)})`:''}.</p>`}
+    ${tabla}
   </section>`;
 }
 
