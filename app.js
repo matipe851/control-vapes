@@ -1239,7 +1239,7 @@ function bindApp(){
 // ---------- boot ----------
 let rTimer=null; const scheduleRender=()=>{ if(rTimer) return; rTimer=requestAnimationFrame(()=>{ rTimer=null;
   // don't wipe a form someone is typing in
-  const a=document.activeElement; if(S.me && a && (a.tagName==='INPUT'||a.tagName==='SELECT') && a.value && a.type!=='date'){ pending=true; return; }
+  const a=document.activeElement; if(S.me && a && (a.tagName==='SELECT' || (a.tagName==='INPUT' && a.value && a.type!=='date'))){ pending=true; return; }  // un <select> abierto se cierra si se redibuja la pantalla (celular)
   render(); }); };
 let pending=false;
 document.addEventListener('focusout',()=>{ if(pending){ pending=false; setTimeout(()=>{ const a=document.activeElement; if(!(a && (a.tagName==='INPUT'||a.tagName==='SELECT'))) render(); else pending=true; },0);} });
