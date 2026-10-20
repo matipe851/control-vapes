@@ -568,7 +568,7 @@ function viewVentas(){
     <label>Fecha<input type="date" id="v-fecha" value="${esc(S.vf.fecha||today())}" required></label>
     <label>Cliente ${S.ventaClienteNuevo
       ? `<input id="v-cli-nuevo" placeholder="Nombre del cliente nuevo" required maxlength="50" value="${esc(S.vf.cliNuevo||'')}">`
-      : `<select id="v-cli" required><option value="">Elegí…</option>${clients.map(c=>`<option value="${c.id}" ${S.vf.cli===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}<option value="__new">+ Cliente nuevo</option></select>`}</label>
+      : `<span class="cli-pick"><input id="v-cli-q" type="search" placeholder="Escribí el nombre…" autocomplete="off" autocapitalize="words" enterkeyhint="done" value="${esc(S.clients[S.vf.cli]?.nombre||'')}" aria-label="Buscar cliente"><input type="hidden" id="v-cli" value="${esc(S.clients[S.vf.cli]?S.vf.cli:'')}"><span id="v-cli-list" class="cli-list" hidden></span></span>`}</label>
     <label>Medio de pago<select id="v-medio">${MEDIOS.map(m=>`<option ${S.vf.medio===m?'selected':''}>${m}</option>`).join('')}</select></label>
     <label class="chk"><input type="checkbox" id="v-cat" ${S.vf.cat?'checked':''}> Vino del catálogo</label>
     <label>Descuento <span style="display:flex;gap:6px"><input id="v-desc" type="number" min="0" step="1" placeholder="0" value="${esc(S.vf.desc||'')}" aria-label="Descuento"><select id="v-desc-tipo" style="width:auto" aria-label="Tipo de descuento"><option value="$" ${S.vf.descTipo!=='%'?'selected':''}>$</option><option value="%" ${S.vf.descTipo==='%'?'selected':''}>%</option></select></span></label>
@@ -1068,8 +1068,27 @@ function bindApp(){
   document.querySelectorAll('[data-del-no]').forEach(b=>b.onclick=()=>{ S.confirm=null; render(); });
   document.querySelectorAll('[data-del-yes]').forEach(b=>b.onclick=()=>{ const path=b.dataset.delYes; S.confirm=null; save(()=>S.db.doc(path).delete(),'Borrado'); });
 
-  const vcli=document.getElementById('v-cli');
-  if(vcli) vcli.onchange=()=>{ if(vcli.value==='__new'){ S.ventaClienteNuevo=true; S.vf.cli=''; render(); document.getElementById('v-cli-nuevo')?.focus(); } else S.vf.cli=vcli.value; };
+  // buscador de clientes: escribís el nombre y elegís de la lista
+  const vcq=document.getElementById('v-cli-q'), vcli=document.getElementById('v-cli'), vcl=document.getElementById('v-cli-list');
+  if(vcq){
+    const norm=t=>String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    const todos=()=>Object.values(S.clients).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+    const pick=c=>{ S.vf.cli=c.id; vcli.value=c.id; vcq.value=c.nombre; vcl.hidden=true; vcq.blur(); };
+    const nuevo=()=>{ S.ventaClienteNuevo=true; S.vf.cli=''; S.vf.cliNuevo=vcq.value.trim(); render(); document.getElementById('v-cli-nuevo')?.focus(); };
+    const show=()=>{ const ws=norm(vcq.value).split(/\s+/).filter(Boolean);
+      const hits=todos().filter(c=>{ const n=norm(c.nombre); return ws.every(w=>n.includes(w)); });
+      vcl.innerHTML=hits.slice(0,30).map(c=>`<button type="button" data-cid="${esc(c.id)}">${esc(c.nombre)}</button>`).join('')
+        +(hits.length?'':'<span class="cli-none">No hay clientes con ese nombre</span>')
+        +`<button type="button" class="cli-new" data-cnew>+ Cliente nuevo${vcq.value.trim()?` "${esc(vcq.value.trim())}"`:''}</button>`;
+      vcl.hidden=false;
+      vcl.querySelectorAll('[data-cid]').forEach(b=>b.onclick=()=>pick(S.clients[b.dataset.cid]));
+      vcl.querySelector('[data-cnew]').onclick=nuevo; };
+    vcl.onpointerdown=e=>e.preventDefault();   // que tocar la lista no cierre el teclado antes de elegir
+    vcq.onfocus=()=>{ vcq.select(); show(); };
+    vcq.oninput=()=>{ S.vf.cli=''; vcli.value=''; show(); };
+    vcq.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); const b=vcl.querySelector('[data-cid]'); if(b) b.click(); } else if(e.key==='Escape'){ vcl.hidden=true; } };
+    vcq.onblur=()=>setTimeout(()=>{ vcl.hidden=true; if(!vcli.value){ const m=todos().find(c=>norm(c.nombre)===norm(vcq.value.trim())); if(m) pick(m); } },150);
+  }
   const vcn=document.getElementById('v-cli-nuevo'); if(vcn) vcn.oninput=()=>S.vf.cliNuevo=vcn.value;
   const vfe=document.getElementById('v-fecha'); if(vfe) vfe.onchange=()=>S.vf.fecha=vfe.value;
   const vme=document.getElementById('v-medio'); if(vme) vme.onchange=()=>S.vf.medio=vme.value;
@@ -1106,7 +1125,7 @@ function bindApp(){
     if(S.ventaClienteNuevo){ const nombre=document.getElementById('v-cli-nuevo').value.trim(); if(!nombre) return toast('Escribí el nombre del cliente');
       const ex=Object.values(S.clients).find(c=>c.nombre.toLowerCase()===nombre.toLowerCase());
       if(ex) cid=ex.id; else { try{ const ref=await S.db.collection('clientes').add({nombre, contacto:'', creado:Date.now(), creadoPor:S.me}); cid=ref.id; }catch(err){ return toast(writeErr(err)); } }
-    } else { cid=document.getElementById('v-cli').value; if(!cid||cid==='__new') return toast('Elegí un cliente'); }
+    } else { cid=document.getElementById('v-cli').value; if(!cid){ const t=(document.getElementById('v-cli-q')?.value||'').trim().toLowerCase(); cid=Object.values(S.clients).find(c=>c.nombre.toLowerCase()===t)?.id||''; } if(!cid) return toast('Elegí un cliente de la lista'); }
     const btn=fv.querySelector('button[type=submit]'); btn.disabled=true;
     const now=Date.now(); const pedidoId = items.length>1 ? S.db.collection('ventas').doc().id : null;
     const units=items.reduce((a,x)=>a+x.cant,0);
@@ -1239,7 +1258,7 @@ function bindApp(){
 // ---------- boot ----------
 let rTimer=null; const scheduleRender=()=>{ if(rTimer) return; rTimer=requestAnimationFrame(()=>{ rTimer=null;
   // don't wipe a form someone is typing in
-  const a=document.activeElement; if(S.me && a && (a.tagName==='SELECT' || (a.tagName==='INPUT' && a.value && a.type!=='date'))){ pending=true; return; }  // un <select> abierto se cierra si se redibuja la pantalla (celular)
+  const a=document.activeElement; if(S.me && a && (a.tagName==='SELECT' || a.id==='v-cli-q' || (a.tagName==='INPUT' && a.value && a.type!=='date'))){ pending=true; return; }  // un <select> abierto se cierra si se redibuja la pantalla (celular)
   render(); }); };
 let pending=false;
 document.addEventListener('focusout',()=>{ if(pending){ pending=false; setTimeout(()=>{ const a=document.activeElement; if(!(a && (a.tagName==='INPUT'||a.tagName==='SELECT'))) render(); else pending=true; },0);} });
