@@ -423,6 +423,43 @@ function viewVisitas(){
   </section>`;
 }
 
+function viewProyeccion(){
+  const now=new Date(), y=now.getFullYear(), mo=now.getMonth(), dia=now.getDate();
+  const diasMes=new Date(y,mo+1,0).getDate(), quedan=diasMes-dia;
+  const kCur=`${y}-${pad(mo+1)}`; const pd=new Date(y,mo-1,1); const kPrev=`${pd.getFullYear()}-${pad(pd.getMonth()+1)}`;
+  const cur={t:0,u:0,g:0}, prev={t:0,u:0,g:0}, prevHasta={t:0};
+  Object.values(S.ventas).forEach(v=>{ const k=v.fecha?.slice(0,7); const t=ventaTotal(v), u=Number(v.cantidad)||0, g=ventaGanancia(v);
+    if(k===kCur){ cur.t+=t; cur.u+=u; cur.g+=g; }
+    else if(k===kPrev){ prev.t+=t; prev.u+=u; prev.g+=g; if(Number(v.fecha.slice(8,10))<=dia) prevHasta.t+=t; } });
+  const f=diasMes/dia, proy={t:cur.t*f, u:Math.round(cur.u*f), g:cur.g*f};
+  const pct=(a,b)=>b?Math.round((a/b-1)*100):null;
+  const vsPrev=pct(proy.t,prev.t);
+  const cmp=vsPrev==null?'Sin ventas el mes pasado para comparar':`<span style="color:${vsPrev>=0?'var(--ok)':'var(--bad)'};font-weight:600">${vsPrev>=0?'+':''}${vsPrev}%</span> vs ${MES[pd.getMonth()]} (${money(prev.t)})`;
+  const ritmo=cur.t/dia;
+  let consejo='';
+  if(prev.t && quedan>0){
+    const falta=prev.t-cur.t;
+    consejo = falta>0
+      ? `Para igualar ${MES[pd.getMonth()]} te faltan <b>${money(falta)}</b>: unos <b>${money(falta/quedan)}</b> por día en los ${quedan} día${quedan===1?'':'s'} que quedan (hoy venís a ${money(ritmo)} por día).`
+      : `Ya superaste todo ${MES[pd.getMonth()]} y quedan ${quedan} día${quedan===1?'':'s'}.`;
+  }
+  const hasta=pct(cur.t,prevHasta.t);
+  const mx=Math.max(proy.t,prev.t)||1;
+  const bar=(w,c,lbl)=>`<div style="display:grid;grid-template-columns:92px 1fr auto;gap:10px;align-items:center;font-size:13px"><span class="sub">${lbl}</span><div style="background:var(--surface-2);border-radius:4px;height:10px;overflow:hidden"><i style="display:block;height:100%;width:${(w/mx*100).toFixed(1)}%;background:${c};border-radius:4px"></i></div><span class="num">${money(w)}</span></div>`;
+  return `<section class="panel"><div class="panel-head"><div><h2>Proyección del mes</h2><span class="sub">${MES[mo]} · día ${dia} de ${diasMes} · según el ritmo que llevás${dia<5?' (todavía es temprano, puede variar bastante)':''}</span></div></div>
+    ${cur.t||cur.u?`
+    <section class="kpis" style="margin-bottom:14px">
+      <div class="kpi"><span class="l">Facturación estimada</span><span class="v num">${money(proy.t)}</span><span class="h">${cmp}</span></div>
+      <div class="kpi"><span class="l">Unidades estimadas</span><span class="v num">${n0.format(proy.u)}</span><span class="h">${prev.u?`${MES[pd.getMonth()]}: ${n0.format(prev.u)}`:'—'}</span></div>
+      <div class="kpi"><span class="l">Ganancia estimada</span><span class="v num">${money(proy.g)}</span><span class="h">${prev.g?`${MES[pd.getMonth()]}: ${money(prev.g)}`:'—'}</span></div>
+      <div class="kpi"><span class="l">Vas hasta hoy</span><span class="v num">${money(cur.t)}</span><span class="h">${hasta==null?`${money(ritmo)} por día`:`<span style="color:${hasta>=0?'var(--ok)':'var(--bad)'}">${hasta>=0?'+':''}${hasta}%</span> vs mismo día de ${MES[pd.getMonth()]}`}</span></div>
+    </section>
+    <div style="display:grid;gap:8px">${bar(cur.t,'var(--accent)','Hasta hoy')}${bar(proy.t,'color-mix(in srgb,var(--accent) 40%,var(--surface-2))','Estimado')}${prev.t?bar(prev.t,'var(--muted)',`Todo ${MES[pd.getMonth()]}`):''}</div>
+    ${consejo?`<p class="sub" style="margin:12px 0 0">${consejo}</p>`:''}`
+    :`<p class="empty">Todavía no hay ventas este mes. Cuando cargues la primera aparece la estimación.</p>`}
+  </section>`;
+}
+
 function viewResumen(){
   const vs=Object.values(S.ventas).filter(v=>inPeriod(v.fecha));
   const total=vs.reduce((a,v)=>a+ventaTotal(v),0);
@@ -468,6 +505,7 @@ function viewResumen(){
     ${S.users[S.me]?.rol==='admin'?(()=>{ const sc=saldoCuenta(); return sc?`<div class="kpi"><span class="l">Saldo en cuenta</span><span class="v num">${money(sc.total)}</span><span class="h">Cobros ${money(sc.cobros)}${sc.salidas?` · salidas −${money(sc.salidas)}`:''} · <a href="#" data-goto-cuenta>ver movimientos</a></span></div>`:`<div class="kpi"><span class="l">Saldo en cuenta</span><span class="v num" style="color:var(--muted,#888)">—</span><span class="h"><a href="#" data-goto-cuenta>Cargar saldo</a></span></div>`; })():''}
     <div class="kpi"><span class="l">Sabores a reponer</span><span class="v num" style="color:${reponer?'var(--warn)':'inherit'}">${reponer}</span><span class="h">Stock en el mínimo o debajo</span></div>
   </section>
+  ${viewProyeccion()}
   ${S.users[S.me]?.rol==='admin'?viewVisitas():''}
   <div class="grid2">
     <section class="panel"><div class="panel-head"><h2>Sabores más vendidos</h2><span class="sub">unidades</span></div>${barList(rankSabor, n0.format, '', true)}</section>
