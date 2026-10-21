@@ -90,9 +90,9 @@ function mensajeStock(){
 const catalogoURL = () => 'https://vapdm-ba.web.app/';
 const catalogoActivo = () => !!(S.catalogo && S.catalogo.activo!==false && S.catalogo.telefono && !S.catErr);
 function catalogoItems(){
-  return Object.values(S.prods).map(p=>{ const st=stockOf(p.id); if(st<=0) return null;
+  return Object.values(S.prods).map(p=>{ const st=stockOf(p.id);
     const vg=variantsOf(p.id).filter(g=>g.restante>0); const precio=(vg[0]&&vg[0].precio)||Number(p.precio)||0;
-    return {id:p.id, sabor:p.sabor, emoji:frutaDe(p.sabor)||'💨', ice:esIce(p.sabor), precio, pocas:st<=2, max:st};
+    return {id:p.id, sabor:p.sabor, emoji:frutaDe(p.sabor)||'💨', ice:esIce(p.sabor), precio, pocas:st>0&&st<=2, max:Math.max(st,0), agotado:st<=0};
   }).filter(Boolean).sort((a,b)=>a.sabor.localeCompare(b.sabor));
 }
 let catTimer=null;
@@ -104,7 +104,7 @@ function syncCatalogo(){
   clearTimeout(catTimer); catTimer=setTimeout(()=>{ S.db.doc('catalogo/actual').set({items, actualizado:Date.now()},{merge:true}).catch(err=>{ console.error(err); S.catErr=err.code||'error'; scheduleRender(); }); },1200);
 }
 function viewCatalogo(){
-  const c=S.catalogo||{}; const url=catalogoURL(); const items=catalogoItems();
+  const c=S.catalogo||{}; const url=catalogoURL(); const items=catalogoItems().filter(i=>!i.agotado);
   if(S.catErr) return `<section class="panel"><h2>Catálogo online</h2><p class="note">El catálogo todavía no está habilitado en la base de datos (falta actualizar las reglas de Firebase). Avisale a Claude para que lo termine de configurar.</p></section>`;
   return `<section class="panel"><div class="panel-head"><div><h2>Catálogo online</h2><span class="sub">Página para tus clientes con los sabores en stock. Se actualiza sola con cada venta y reposición.</span></div>
       <span class="pill ${catalogoActivo()?'ok':'mid'}">${catalogoActivo()?'Publicado':c.telefono?'Pausado':'Sin configurar'}</span></div>
