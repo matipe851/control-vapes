@@ -134,13 +134,16 @@ function viewCatalogo(){
 const sorteoMin = () => { const n=parseInt(S.sorteoCfg?.minimo,10); return n>=1&&n<=20?n:2; };
 function sorteoRows(){
   const min=sorteoMin(); const all=Object.values(S.sorteo);
+  // registros repetidos con el mismo WhatsApp: vale solo el primero
+  const primero={}; [...all].sort((a,b)=>(a.creado||0)-(b.creado||0)).forEach(p=>{ const t=waNumber(p.tel)||p.tel; if(!primero[t]) primero[t]=p.id; });
+  const esDup=p=>primero[waNumber(p.tel)||p.tel]!==p.id;
   return all.map(p=>{ const vis=S.sorteoVis[p.id]||{}; const entraron=Object.keys(vis).filter(dev=>dev!==p.dev).length;
     // un mismo número cuenta una sola vez, y no vale anotarse uno mismo con su propio número
     const miTel=waNumber(p.tel)||p.tel, vistos=new Set();
-    const anotados=all.filter(q=>{ if(q.ref!==p.id || q.id===p.id || q.dev===p.dev) return false; const t=waNumber(q.tel)||q.tel;
+    const anotados=all.filter(q=>{ if(esDup(q) || q.ref!==p.id || q.id===p.id || q.dev===p.dev) return false; const t=waNumber(q.tel)||q.tel;
       if(t===miTel || vistos.has(t)) return false; vistos.add(t); return true; });
     const trajo=anotados.length;
-    const de=p.ref&&S.sorteo[p.ref]?S.sorteo[p.ref].nombre:''; return {p, trajo, entraron, anotados, ok:trajo>=min, de}; })
+    const de=p.ref&&S.sorteo[p.ref]?S.sorteo[p.ref].nombre:''; const dup=esDup(p); return {p, trajo, entraron, anotados, ok:!dup&&trajo>=min, dup, de}; })
     .sort((a,b)=>b.trajo-a.trajo||b.entraron-a.entraron||(b.p.creado||0)-(a.p.creado||0));
 }
 const fechaTs = t => t ? new Date(t).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—';
@@ -181,7 +184,7 @@ function viewSorteo(){
     <p class="sub">Los que se anotan se cargan solos en Clientes, con su WhatsApp.</p>
   </section>
   <div class="kpis">
-    <div class="kpi"><span class="l">Se anotaron</span><span class="v num">${rows.length}</span><span class="h">ya están en Clientes</span></div>
+    <div class="kpi"><span class="l">Se anotaron</span><span class="v num">${rows.filter(r=>!r.dup).length}</span><span class="h">ya están en Clientes</span></div>
     <div class="kpi"><span class="l">Participando</span><span class="v num">${ok.length}</span><span class="h">${min} o más amigos anotados</span></div>
     <div class="kpi"><span class="l">Visitas por links</span><span class="v num">${nuevos}</span><span class="h">celulares distintos que entraron</span></div>
   </div>
@@ -193,7 +196,7 @@ function viewSorteo(){
     ${ok.length?`<p class="sub">Entran al sorteo los ${ok.length} que tienen ${min} o más amigos anotados, con ${chances} chance${chances===1?'':'s'} en total. Cada amigo anotado es una chance.</p>`:`<p class="sub">Para entrar al sorteo, cada uno necesita ${min} amigos anotados por su link.</p>`}
     ${rows.length?`<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>WhatsApp</th><th>Se anotó</th><th class="r">Entraron</th><th class="r">Anotados</th><th>Estado</th><th>Llegó por</th><th></th></tr></thead><tbody>
       ${rows.map(r=>`<tr><td><b>${esc(r.p.nombre)}</b>${r.p.clienteId&&S.clients[r.p.clienteId]&&(S.clients[r.p.clienteId].origen!=='Sorteo')?' <span class="pill mid" title="Ya era cliente: no se duplicó">Cliente</span>':''}</td><td><span class="contact-cell">${esc(r.p.tel)}${waLink(r.p.tel)}</span></td><td class="num">${fechaTs(r.p.creado)}</td><td class="r num">${r.entraron}</td><td class="r num" title="${esc(r.anotados.map(q=>q.nombre).join(', '))}">${r.trajo}</td>
-        <td><span class="pill ${r.ok?'ok':'warn'}">${r.ok?`Participa · ${r.trajo} chance${r.trajo===1?'':'s'}`:`Le falta${min-r.trajo===1?'':'n'} ${min-r.trajo} anotado${min-r.trajo===1?'':'s'}`}</span></td><td class="sub">${esc(r.de||'—')}</td>
+        <td>${r.dup?'<span class="pill bad" title="Ese WhatsApp ya estaba anotado: este registro no participa">Repetido</span>':`<span class="pill ${r.ok?'ok':'warn'}">${r.ok?`Participa · ${r.trajo} chance${r.trajo===1?'':'s'}`:`Le falta${min-r.trajo===1?'':'n'} ${min-r.trajo} anotado${min-r.trajo===1?'':'s'}`}</span>`}</td><td class="sub">${esc(r.de||'—')}</td>
         <td class="r">${S.confirm==='so-del/'+r.p.id?`<span class="split" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn danger sm" data-so-del-yes="${r.p.id}">Borrar</button><button class="btn ghost sm" data-so-del-no>No</button></span>`:`<button class="btn ghost sm" data-so-del="${r.p.id}" title="Saca a esta persona del sorteo (sigue en Clientes)">Quitar</button>`}</td></tr>`).join('')}
     </tbody></table></div>`:`<p class="empty">Todavía no se anotó nadie. Activá el sorteo y mandá el catálogo: el botón aparece arriba de los sabores.</p>`}
   </section>`;
