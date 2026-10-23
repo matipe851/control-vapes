@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Sorteo Ice King</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E❄️%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Work+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Sala del sorteo: misma marca que el catálogo (hielo + tinta + etiqueta amarilla).
+   Lo formal está en el "acta": número de acta, fecha y hora, padrón de participantes y un único momento animado (el tambor de nombres). */
+:root{
+  --frost:#e6f0f5; --ice:#f4f9fb; --ink:#0e2a44; --muted:#4f6a80; --line:rgba(14,42,68,.14); --steel:#9fb3c1;
+  --led:#13b5ea; --tag:#ffd23f; --tag-ink:#3a2a00; --wa:#14a85a; --ok:#0b6b37;
+  --display:"Big Shoulders Display","Arial Narrow",system-ui,sans-serif; --body:"Work Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{background:var(--frost)}
+body{margin:0;min-height:100vh;color:var(--ink);font-family:var(--body);font-size:15.5px;line-height:1.5;
+  background:radial-gradient(110% 60% at 50% 0%,#fff 0%,var(--frost) 70%)}
+button,a{font:inherit}
+button:focus-visible,a:focus-visible{outline:3px solid var(--led);outline-offset:3px}
+.num{font-variant-numeric:tabular-nums}
+[hidden]{display:none!important}
+.wrap{max-width:880px;margin:0 auto;padding:28px 16px 60px}
+
+/* encabezado del acta */
+.acta-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:14px}
+.acta-top b{color:var(--ink)}
+.back{color:var(--muted);text-decoration:none;font-weight:600}
+.back:hover{color:var(--ink)}
+h1{margin:22px 0 4px;font-family:var(--display);font-weight:900;font-size:clamp(54px,12vw,104px);line-height:.86;text-transform:uppercase;letter-spacing:-.01em}
+h1 small{display:block;font-size:.34em;font-weight:800;color:var(--led);letter-spacing:.01em;margin-top:.2em}
+.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:24px;border-top:2px solid var(--ink);border-bottom:1px solid var(--line)}
+.fact{padding:12px 14px 14px 0}
+.fact+.fact{padding-left:14px;border-left:1px solid var(--line)}
+.fact .l{font-size:13px;color:var(--muted);font-weight:500}
+.fact .v{font-family:var(--display);font-weight:800;font-size:30px;line-height:1.05}
+@media (max-width:520px){.facts{grid-template-columns:1fr 1fr}.fact:nth-child(3){grid-column:1/-1;border-left:0;padding-left:0;border-top:1px solid var(--line)}}
+
+/* el tambor */
+.stage{margin-top:28px;background:var(--ink);color:#fff;border-radius:28px;padding:26px 20px 24px;display:grid;justify-items:center;gap:18px;position:relative;overflow:hidden;
+  box-shadow:0 30px 60px -30px rgba(14,42,68,.6)}
+.stage::before{content:"";position:absolute;inset:0;background:radial-gradient(70% 60% at 50% 45%,rgba(19,181,234,.22),transparent 70%);pointer-events:none}
+.drum{position:relative;width:100%;max-width:560px;height:204px;border-radius:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);overflow:hidden}
+.drum::before,.drum::after{content:"";position:absolute;left:0;right:0;height:72px;z-index:2;pointer-events:none}
+.drum::before{top:0;background:linear-gradient(var(--ink),rgba(14,42,68,0))}
+.drum::after{bottom:0;background:linear-gradient(rgba(14,42,68,0),var(--ink))}
+.window{position:absolute;left:10px;right:10px;top:50%;height:68px;margin-top:-34px;border-radius:14px;border:2px solid var(--tag);z-index:3;pointer-events:none}
+.reel{position:absolute;left:0;right:0;top:0;will-change:transform}
+.reel div{height:68px;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:clamp(28px,7vw,42px);text-transform:uppercase;letter-spacing:.01em;white-space:nowrap;overflow:hidden;padding:0 18px;color:#cfe6f2}
+.reel div.win{color:#fff}
+.go{border:0;border-radius:16px;padding:16px 30px;font-weight:700;font-size:17px;background:var(--tag);color:var(--tag-ink);cursor:pointer;position:relative;z-index:2}
+.go:hover{filter:brightness(1.05)}
+.go[disabled]{opacity:.45;cursor:not-allowed}
+.hint{position:relative;z-index:2;margin:0;color:#a9c3d6;font-size:14px;text-align:center;max-width:46ch}
+
+/* ganador */
+.winner{margin-top:22px;border-radius:24px;background:#fff;border:1px solid var(--line);padding:24px 22px;display:grid;gap:14px;box-shadow:0 20px 40px -26px rgba(14,42,68,.5);position:relative}
+.seal{position:absolute;top:-18px;right:18px;background:var(--tag);color:var(--tag-ink);border-radius:12px;padding:6px 14px;font-weight:700;font-size:14px;transform:rotate(3deg)}
+.winner .l{font-size:14px;color:var(--muted);font-weight:600}
+.winner .name{font-family:var(--display);font-weight:900;font-size:clamp(46px,11vw,84px);line-height:.9;text-transform:uppercase;overflow-wrap:anywhere}
+.wmeta{display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:14.5px}
+.wmeta b{color:var(--ink)}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+.wa{display:inline-flex;align-items:center;gap:8px;border-radius:14px;padding:13px 18px;font-weight:700;text-decoration:none;color:#fff;background:var(--wa)}
+.wa svg{width:19px;height:19px;fill:currentColor}
+.ghost{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:14px;padding:12px 16px;font-weight:600;cursor:pointer;text-decoration:none}
+.ghost:hover{background:var(--ice)}
+
+/* padrón */
+.roll{margin-top:34px}
+.roll h2{margin:0 0 4px;font-family:var(--display);font-weight:800;font-size:30px;text-transform:uppercase}
+.roll p{margin:0 0 12px;color:var(--muted);font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th{text-align:left;font-size:13px;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:2px solid var(--ink)}
+td{padding:10px;border-bottom:1px solid var(--line)}
+td.r,th.r{text-align:right}
+tr.is-win td{background:rgba(255,210,63,.25);font-weight:700}
+.msg{margin-top:60px;text-align:center;color:var(--muted);background:#fff;border-radius:20px;padding:40px 20px}
+.msg a{color:var(--ink);font-weight:700}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:12px;font-weight:600;z-index:9}
+@media (prefers-reduced-motion:reduce){.reel{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><p class="msg">Cargando el sorteo…</p></div>
+<div class="toast" id="toast" hidden></div>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="config.js"></script>
+<script>
+(() => {
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=m=>{ const t=$('toast'); t.textContent=m; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2600); };
+const WA='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Z"/></svg>';
+// mismo criterio que Control Vapes para normalizar teléfonos argentinos
+function waNumber(raw){ let d=String(raw||'').replace(/\D/g,''); if(d.length<8) return null; if(d.startsWith('00')) d=d.slice(2);
+  if(d.startsWith('54')){ d=d.slice(2); if(d.startsWith('9')) d=d.slice(1); } if(d.startsWith('0')) d=d.slice(1);
+  if(d.length===8) d='11'+d; else if(d.length===10&&d.startsWith('15')) d='11'+d.slice(2);
+  else if(d.length===12){ for(const a of [2,3,4]) if(d.slice(a,a+2)==='15'){ d=d.slice(0,a)+d.slice(a+2); break; } }
+  return d.length===10?'549'+d:null; }
+const telOculto=t=>{ const n=waNumber(t); if(!n) return '••••'; const d=n.slice(3); return `${d.slice(0,2)} ••••-${d.slice(-4)}`; };
+const fecha=s=>{ if(!s) return 'A definir'; return new Date(s+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'}); };
+const fechaHora=t=>new Date(t).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+
+let db, CFG=null, P={}, ready={cfg:false,p:false}, spinning=false;
+const minimo=()=>{ const n=parseInt(CFG?.minimo,10); return n>=1&&n<=20?n:2; };
+// participantes habilitados: mismo criterio que la solapa Sorteo
+function elegibles(){
+  const all=Object.values(P), min=minimo(); const primero={};
+  [...all].sort((a,b)=>(a.creado||0)-(b.creado||0)).forEach(p=>{ const t=waNumber(p.tel)||p.tel; if(!primero[t]) primero[t]=p.id; });
+  const dup=p=>primero[waNumber(p.tel)||p.tel]!==p.id;
+  return all.filter(p=>!dup(p)).map(p=>{ const mio=waNumber(p.tel)||p.tel, vistos=new Set();
+    const n=all.filter(q=>{ if(dup(q)||q.ref!==p.id||q.id===p.id||q.dev===p.dev) return false; const t=waNumber(q.tel)||q.tel; if(t===mio||vistos.has(t)) return false; vistos.add(t); return true; }).length;
+    return {p, chances:n, ok:n>=min}; }).filter(r=>r.ok).sort((a,b)=>b.chances-a.chances||a.p.nombre.localeCompare(b.p.nombre));
+}
+function render(){
+  if(!ready.cfg||!ready.p) return;
+  if(spinning) return;
+  const c=CFG||{}, rows=elegibles(), total=rows.reduce((a,r)=>a+r.chances,0), g=c.ganador||null;
+  const acta = g?.acta || ('IK-'+new Date().toISOString().slice(2,10).replace(/-/g,''));
+  $('app').innerHTML=`
+  <div class="acta-top"><a class="back" href="./">← Volver a Control Vapes</a><span>Acta <b class="num">${esc(acta)}</b></span></div>
+  <h1>Sorteo Ice King<small>Premio: ${esc(c.premio||'un Elf Bar Ice King')}</small></h1>
+  <div class="facts">
+    <div class="fact"><div class="l">Fecha del sorteo</div><div class="v">${esc(fecha(c.fecha))}</div></div>
+    <div class="fact"><div class="l">Participantes habilitados</div><div class="v num">${rows.length}</div></div>
+    <div class="fact"><div class="l">Chances en juego</div><div class="v num">${total}</div></div>
+  </div>
+  <section class="stage" aria-live="polite">
+    <div class="drum"><div class="window"></div><div class="reel" id="reel"></div></div>
+    ${g?`<button class="go" id="go" ${rows.length?'':'disabled'}>Volver a sortear</button><p class="hint">Ya hay un ganador registrado. Volver a sortear lo reemplaza.</p>`
+      :`<button class="go" id="go" ${rows.length?'':'disabled'}>Realizar sorteo</button><p class="hint">${rows.length?`Cada participante tiene tantas chances como personas se anotaron desde su link. Mínimo para participar: ${minimo()}.`:`Todavía no hay participantes habilitados: cada uno necesita ${minimo()} personas anotadas desde su link.`}</p>`}
+  </section>
+  <div id="win">${g?winnerHTML(g,c):''}</div>
+  <section class="roll"><h2>Padrón de participantes</h2><p>Habilitados para este sorteo, con sus chances.</p>
+    ${rows.length?`<table><thead><tr><th>#</th><th>Participante</th><th>WhatsApp</th><th class="r">Chances</th></tr></thead><tbody>
+      ${rows.map((r,i)=>`<tr class="${g&&g.id===r.p.id?'is-win':''}"><td class="num">${i+1}</td><td>${esc(r.p.nombre)}</td><td class="num">${esc(telOculto(r.p.tel))}</td><td class="r num">${r.chances}</td></tr>`).join('')}
+    </tbody></table>`:'<p>No hay participantes habilitados todavía.</p>'}
+  </section>`;
+  fillReel(rows, g);
+  $('go').onclick=()=>{ if(g && !confirm('¿Seguro? Se reemplaza el ganador registrado.')) return; sortear(rows, total, acta); };
+  bindWinner(c);
+}
+function winnerHTML(g,c){
+  const n=waNumber(g.tel); const txt=`¡Hola ${g.nombre}! 🎉 Ganaste el sorteo de ${c.premio||'un Elf Bar Ice King'} (acta ${g.acta||''}). Escribime y coordinamos la entrega.`;
+  return `<section class="winner"><span class="seal">Ganador</span>
+    <div class="l">Resultado del sorteo</div>
+    <div class="name">${esc(g.nombre)}</div>
+    <div class="wmeta"><span>WhatsApp <b class="num">${esc(telOculto(g.tel))}</b></span><span><b class="num">${g.chances}</b> de <b class="num">${g.total}</b> chances</span><span>Sorteado el <b class="num">${esc(fechaHora(g.fecha))}</b></span></div>
+    <div class="actions">${n?`<a class="wa" href="https://api.whatsapp.com/send?phone=${n}&text=${encodeURIComponent(txt)}" target="_blank" rel="noopener">${WA}Avisarle por WhatsApp</a>`:''}
+      <button class="ghost" id="copy-res">Copiar resultado</button><a class="ghost" href="./">Volver a Control Vapes</a></div>
+  </section>`;
+}
+function bindWinner(c){ const b=$('copy-res'); if(!b) return; b.onclick=async()=>{ const g=c.ganador;
+  const t=`🎉 Resultado del sorteo de ${c.premio||'un Elf Bar Ice King'}\nGanador: ${g.nombre} (${telOculto(g.tel)})\nActa ${g.acta} · ${fechaHora(g.fecha)}\n¡Gracias a todos por participar!`;
+  try{ await navigator.clipboard.writeText(t); toast('Resultado copiado'); }catch(e){ toast('No se pudo copiar'); } }; }
+function fillReel(rows, g){
+  const reel=$('reel'); if(!reel) return;
+  const names = rows.length ? rows.map(r=>r.p.nombre) : ['Sin participantes'];
+  if(!g){ reel.innerHTML=`<div>${esc(names[0])}</div><div class="win">¿Quién gana?</div><div>${esc(names[1]||names[0])}</div>`; }
+  else { const otros=names.filter(n=>n!==g.nombre); reel.innerHTML=`<div>${esc(otros[0]||'')}</div><div class="win">${esc(g.nombre)}</div><div>${esc(otros[1]||otros[0]||'')}</div>`; }
+  reel.style.transition='none'; reel.style.transform='translateY(0)';
+}
+function sortear(rows,total,acta){
+  if(!rows.length||spinning) return;
+  // ganador ponderado: cada persona anotada desde su link es una chance
+  const x=crypto.getRandomValues(new Uint32Array(1))[0]/4294967296*total; let acc=0, win=rows[rows.length-1];
+  for(const r of rows){ acc+=r.chances; if(x<acc){ win=r; break; } }
+  const g={id:win.p.id, nombre:win.p.nombre, tel:win.p.tel, fecha:Date.now(), chances:win.chances, total, participantes:rows.length, acta};
+  spinning=true; $('go').disabled=true; $('win').innerHTML='';
+  // tambor: una tira larga de nombres que frena en el ganador
+  const names=rows.map(r=>r.p.nombre); const list=[]; const vueltas=Math.max(36, names.length*4);
+  for(let i=0;i<vueltas;i++) list.push(names[Math.floor(Math.random()*names.length)]);
+  list.push(win.p.nombre, names[Math.floor(Math.random()*names.length)]);
+  const reel=$('reel'); reel.innerHTML=list.map((n,i)=>`<div class="${i===list.length-2?'win':''}">${esc(n)}</div>`).join('');
+  reel.style.transition='none'; reel.style.transform='translateY(0)'; void reel.offsetHeight;
+  const dist=(list.length-3)*68; const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  reel.style.transition = reduce ? 'none' : 'transform 5.2s cubic-bezier(.12,.72,.12,1)';
+  reel.style.transform=`translateY(-${dist}px)`;
+  setTimeout(async()=>{
+    try{ await db.doc('catalogo/sorteo').set({ganador:g},{merge:true}); }
+    catch(e){ console.error(e); toast('No se pudo guardar el resultado. Revisá la conexión.'); }
+    spinning=false; CFG={...(CFG||{}), ganador:g}; render();
+    document.getElementById('win')?.scrollIntoView({behavior:reduce?'auto':'smooth',block:'center'});
+  }, reduce?200:5400);
+}
+function msg(h){ $('app').innerHTML=`<p class="msg">${h}</p>`; }
+try{
+  firebase.initializeApp(window.FIREBASE_CONFIG); db=firebase.firestore();
+  firebase.auth().onAuthStateChanged(async u=>{
+    if(!u) return msg('Para entrar a la sala del sorteo iniciá sesión en <a href="./">Control Vapes</a> y volvé a tocar "Ir al sorteo".');
+    try{ const me=await db.doc('usuarios/'+u.uid).get(); if(!me.exists||me.data().rol!=='admin') return msg('Solo el administrador puede realizar el sorteo.'); }
+    catch(e){ return msg('No se pudo verificar tu usuario. Recargá la página.'); }
+    db.doc('catalogo/sorteo').onSnapshot(d=>{ CFG=d.exists?d.data():null; ready.cfg=true; render(); },e=>msg('No se pudo cargar el sorteo.'));
+    db.collection('sorteo').onSnapshot(s=>{ const o={}; s.docs.forEach(d=>o[d.id]={id:d.id,...d.data()}); P=o; ready.p=true; render(); },e=>msg('No se pudo cargar la lista de participantes.'));
+  });
+}catch(e){ msg('No se pudo conectar con la base de datos.'); }
+})();
+</script>
+</body>
+</html>

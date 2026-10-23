@@ -168,6 +168,10 @@ function syncSorteoClientes(){
     go.then(cid=>S.db.doc('sorteo/'+p.id).update({clienteId:cid})).catch(err=>{ console.error('sorteo→clientes',err); sorteoSyncing.delete(p.id); });
   }
 }
+const sorteoLink = () => catalogoURL()+'?sorteo';
+function sorteoInvitacion(){ const c=S.sorteoCfg||{}; const min=sorteoMin();
+  const f=c.fecha?` El ${fmtDate(c.fecha)} sorteo`:' Sorteo'; 
+  return `🎁${f} ${c.premio||'un Elf Bar Ice King'}. Anotate gratis acá (nombre, apellido y WhatsApp) y reenviá tu link a ${min} persona${min===1?'':'s'} para participar 👇\n${sorteoLink()}`; }
 function viewSorteo(){
   if(S.sorteoErr) return `<section class="panel"><h2>Sorteo</h2><p class="note">El sorteo todavía no está habilitado en la base de datos (faltan las reglas de Firebase). Avisale a Claude para que lo termine de configurar.</p></section>`;
   const c=S.sorteoCfg||{}; const rows=sorteoRows(); const ok=rows.filter(r=>r.ok); const chances=ok.reduce((a,r)=>a+r.trajo,0);
@@ -184,6 +188,11 @@ function viewSorteo(){
     </form>
     <p class="sub">Los que se anotan se cargan solos en Clientes, con su WhatsApp.</p>
   </section>
+  <section class="panel"><div class="panel-head"><div><h2>Tu link de invitación</h2><span class="sub">Abre el catálogo con el formulario del sorteo ya abierto. Pasalo por WhatsApp, en tu estado o en grupos.</span></div></div>
+    <div class="split"><input id="so-link" readonly value="${esc(sorteoLink())}" style="flex:1;min-width:220px"><button class="btn ghost" data-so-copy>Copiar link</button>
+      <a class="wa" style="padding:10px 16px;font-size:14px" href="https://api.whatsapp.com/send?text=${encodeURIComponent(sorteoInvitacion())}" target="_blank" rel="noopener">${WA_ICON}Compartir</a></div>
+    ${c.activo?'':'<p class="note">El sorteo está pausado: con el link se abre el catálogo pero no el formulario. Activalo arriba para que funcione.</p>'}
+  </section>
   <div class="kpis">
     <div class="kpi"><span class="l">Se anotaron</span><span class="v num">${rows.filter(r=>!r.dup).length}</span><span class="h">ya están en Clientes</span></div>
     <div class="kpi"><span class="l">Participando</span><span class="v num">${ok.length}</span><span class="h">${min} o más amigos anotados</span></div>
@@ -193,7 +202,7 @@ function viewSorteo(){
     <p style="margin:0;font-size:20px"><b>${esc(g.nombre)}</b> <span class="sub">${esc(g.tel||'')}</span></p>
     <div class="split">${waLink(g.tel,`¡Hola ${g.nombre}! 🎉 Ganaste el sorteo de ${c.premio||'un Ice King'}. Escribime y coordinamos la entrega.`)}<button class="btn ghost sm" data-so-reset>Borrar ganador</button></div></section>`:''}
   <section class="panel"><div class="panel-head"><h2>Participantes</h2>
-      <button class="btn" data-so-draw ${ok.length?'':'disabled'}>Sortear ganador</button></div>
+      <a class="btn" href="sorteo.html" target="_blank" rel="noopener" style="text-decoration:none">Ir a la sala del sorteo</a></div>
     ${ok.length?`<p class="sub">Entran al sorteo los ${ok.length} que tienen ${min} o más amigos anotados, con ${chances} chance${chances===1?'':'s'} en total. Cada amigo anotado es una chance.</p>`:`<p class="sub">Para entrar al sorteo, cada uno necesita ${min} amigos anotados por su link.</p>`}
     ${rows.length?`<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>WhatsApp</th><th>Se anotó</th><th class="r">Entraron</th><th class="r">Anotados</th><th>Estado</th><th>Llegó por</th><th></th></tr></thead><tbody>
       ${rows.map(r=>`<tr><td><b>${esc(r.p.nombre)}</b>${r.p.clienteId&&S.clients[r.p.clienteId]&&(S.clients[r.p.clienteId].origen!=='Sorteo')?' <span class="pill mid" title="Ya era cliente: no se duplicó">Cliente</span>':''}</td><td><span class="contact-cell">${esc(r.p.tel)}${waLink(r.p.tel)}</span></td><td class="num">${fechaTs(r.p.creado)}</td><td class="r num">${r.entraron}</td><td class="r num" title="${esc(r.anotados.map(q=>q.nombre).join(', '))}">${r.trajo}</td>
@@ -1129,6 +1138,7 @@ function bindApp(){
   const fso=document.getElementById('f-sorteo');
   if(fso) fso.onsubmit=e=>{ e.preventDefault();
     save(()=>S.db.doc('catalogo/sorteo').set({activo:document.getElementById('so-act').checked, premio:document.getElementById('so-premio').value.trim()||'un Elf Bar Ice King', fecha:document.getElementById('so-fecha').value||'', minimo:Math.min(20,Math.max(1,parseInt(document.getElementById('so-min').value,10)||2)), actualizado:Date.now()},{merge:true}), 'Sorteo guardado'); };
+  q('[data-so-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(sorteoLink()); toast('Link copiado'); }catch(e){ toast('No se pudo copiar'); } });
   q('[data-so-draw]',b=>b.onclick=()=>{ const ok=sorteoRows().filter(r=>r.ok); if(!ok.length) return;
     const tot=ok.reduce((a,r)=>a+r.trajo,0); const x=crypto.getRandomValues(new Uint32Array(1))[0]/4294967296*tot; let acc=0, win=ok[ok.length-1];
     for(const r of ok){ acc+=r.trajo; if(x<acc){ win=r; break; } }
