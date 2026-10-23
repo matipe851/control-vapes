@@ -153,7 +153,8 @@ const normNombre = t => String(t||'').toLowerCase().normalize('NFD').replace(/[\
 function syncSorteoClientes(){
   if(S.users[S.me]?.rol!=='admin' || !S.sorteoReady || S.sorteoErr || !S.ready.clientes) return;
   for(const p of Object.values(S.sorteo)){
-    if(p.clienteId || sorteoSyncing.has(p.id)) continue;
+    // si el cliente vinculado se borró, se vuelve a vincular o crear
+    if((p.clienteId && S.clients[p.clienteId]) || sorteoSyncing.has(p.id)) continue;
     sorteoSyncing.add(p.id);
     const num=waNumber(p.tel);
     // 1) mismo WhatsApp → es el mismo cliente
