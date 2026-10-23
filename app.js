@@ -173,7 +173,7 @@ function viewSorteo(){
   const c=S.sorteoCfg||{}; const rows=sorteoRows(); const ok=rows.filter(r=>r.ok); const chances=ok.reduce((a,r)=>a+r.trajo,0);
   const min=sorteoMin(); const nuevos=rows.reduce((a,r)=>a+r.entraron,0); const g=S.ganador||c.ganador||null;
   const waLink=(tel,txt)=>{ const n=waNumber(tel); return n?`<a class="wa" href="https://api.whatsapp.com/send?phone=${n}${txt?`&text=${encodeURIComponent(txt)}`:''}" target="_blank" rel="noopener">${WA_ICON}WhatsApp</a>`:''; };
-  return `<section class="panel"><div class="panel-head"><div><h2>Sorteo</h2><span class="sub">Tus clientes se anotan en el catálogo y le mandan su link a 5 amigos. Participan cuando al menos ${min} de esos amigos se anotan también. Cada amigo anotado es una chance más.</span></div>
+  return `<section class="panel"><div class="panel-head"><div><h2>Sorteo</h2><span class="sub">Tus clientes se anotan en el catálogo y reenvían su link a ${min} persona${min===1?'':'s'}. Participan cuando ${min===1?'esa persona se anota':'esas '+min+' se anotan'} desde su link. Cada persona anotada es una chance más.</span></div>
       <span class="pill ${c.activo?'ok':'mid'}">${c.activo?'Activo en el catálogo':'Pausado'}</span></div>
     <form class="form" id="f-sorteo" autocomplete="off">
       <label>Premio<input id="so-premio" maxlength="60" placeholder="un Elf Bar Ice King" value="${esc(c.premio||'')}"></label>
