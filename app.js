@@ -135,7 +135,10 @@ const sorteoMin = () => { const n=parseInt(S.sorteoCfg?.minimo,10); return n>=1&
 function sorteoRows(){
   const min=sorteoMin(); const all=Object.values(S.sorteo);
   return all.map(p=>{ const vis=S.sorteoVis[p.id]||{}; const entraron=Object.keys(vis).filter(dev=>dev!==p.dev).length;
-    const anotados=all.filter(q=>q.ref===p.id && q.id!==p.id && q.dev!==p.dev);
+    // un mismo número cuenta una sola vez, y no vale anotarse uno mismo con su propio número
+    const miTel=waNumber(p.tel)||p.tel, vistos=new Set();
+    const anotados=all.filter(q=>{ if(q.ref!==p.id || q.id===p.id || q.dev===p.dev) return false; const t=waNumber(q.tel)||q.tel;
+      if(t===miTel || vistos.has(t)) return false; vistos.add(t); return true; });
     const trajo=anotados.length;
     const de=p.ref&&S.sorteo[p.ref]?S.sorteo[p.ref].nombre:''; return {p, trajo, entraron, anotados, ok:trajo>=min, de}; })
     .sort((a,b)=>b.trajo-a.trajo||b.entraron-a.entraron||(b.p.creado||0)-(a.p.creado||0));
@@ -143,14 +146,20 @@ function sorteoRows(){
 const fechaTs = t => t ? new Date(t).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—';
 // Cada participante nuevo se carga solo en Clientes (si el teléfono ya existe, se vincula a ese cliente)
 const sorteoSyncing=new Set();
+const normNombre = t => String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
 function syncSorteoClientes(){
   if(S.users[S.me]?.rol!=='admin' || !S.sorteoReady || S.sorteoErr || !S.ready.clientes) return;
   for(const p of Object.values(S.sorteo)){
     if(p.clienteId || sorteoSyncing.has(p.id)) continue;
     sorteoSyncing.add(p.id);
     const num=waNumber(p.tel);
-    const ex=Object.values(S.clients).find(c=>(num && waNumber(c.contacto)===num));
-    const go = ex ? Promise.resolve(ex.id)
+    // 1) mismo WhatsApp → es el mismo cliente
+    let ex=Object.values(S.clients).find(c=>(num && waNumber(c.contacto)===num));
+    // 2) si no, un único cliente con el mismo nombre y sin teléfono cargado → es él: se le agrega el número
+    let completar=false;
+    if(!ex){ const k=normNombre(p.nombre); const mismos=Object.values(S.clients).filter(c=>normNombre(c.nombre)===k && !waNumber(c.contacto));
+      if(k && mismos.length===1){ ex=mismos[0]; completar=true; } }
+    const go = ex ? (completar ? S.db.doc('clientes/'+ex.id).update({contacto:String(p.tel||'').slice(0,60), editado:Date.now(), editadoPor:S.me}).then(()=>ex.id) : Promise.resolve(ex.id))
       : S.db.collection('clientes').add({nombre:String(p.nombre||'Sin nombre').slice(0,50), contacto:String(p.tel||'').slice(0,60), creado:Date.now(), creadoPor:S.me, origen:'Sorteo'}).then(r=>r.id);
     go.then(cid=>S.db.doc('sorteo/'+p.id).update({clienteId:cid})).catch(err=>{ console.error('sorteo→clientes',err); sorteoSyncing.delete(p.id); });
   }
@@ -183,7 +192,7 @@ function viewSorteo(){
       <button class="btn" data-so-draw ${ok.length?'':'disabled'}>Sortear ganador</button></div>
     ${ok.length?`<p class="sub">Entran al sorteo los ${ok.length} que tienen ${min} o más amigos anotados, con ${chances} chance${chances===1?'':'s'} en total. Cada amigo anotado es una chance.</p>`:`<p class="sub">Para entrar al sorteo, cada uno necesita ${min} amigos anotados por su link.</p>`}
     ${rows.length?`<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>WhatsApp</th><th>Se anotó</th><th class="r">Entraron</th><th class="r">Anotados</th><th>Estado</th><th>Llegó por</th><th></th></tr></thead><tbody>
-      ${rows.map(r=>`<tr><td><b>${esc(r.p.nombre)}</b></td><td><span class="contact-cell">${esc(r.p.tel)}${waLink(r.p.tel)}</span></td><td class="num">${fechaTs(r.p.creado)}</td><td class="r num">${r.entraron}</td><td class="r num" title="${esc(r.anotados.map(q=>q.nombre).join(', '))}">${r.trajo}</td>
+      ${rows.map(r=>`<tr><td><b>${esc(r.p.nombre)}</b>${r.p.clienteId&&S.clients[r.p.clienteId]&&(S.clients[r.p.clienteId].origen!=='Sorteo')?' <span class="pill mid" title="Ya era cliente: no se duplicó">Cliente</span>':''}</td><td><span class="contact-cell">${esc(r.p.tel)}${waLink(r.p.tel)}</span></td><td class="num">${fechaTs(r.p.creado)}</td><td class="r num">${r.entraron}</td><td class="r num" title="${esc(r.anotados.map(q=>q.nombre).join(', '))}">${r.trajo}</td>
         <td><span class="pill ${r.ok?'ok':'warn'}">${r.ok?`Participa · ${r.trajo} chance${r.trajo===1?'':'s'}`:`Le falta${min-r.trajo===1?'':'n'} ${min-r.trajo} anotado${min-r.trajo===1?'':'s'}`}</span></td><td class="sub">${esc(r.de||'—')}</td>
         <td class="r">${S.confirm==='so-del/'+r.p.id?`<span class="split" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn danger sm" data-so-del-yes="${r.p.id}">Borrar</button><button class="btn ghost sm" data-so-del-no>No</button></span>`:`<button class="btn ghost sm" data-so-del="${r.p.id}" title="Saca a esta persona del sorteo (sigue en Clientes)">Quitar</button>`}</td></tr>`).join('')}
     </tbody></table></div>`:`<p class="empty">Todavía no se anotó nadie. Activá el sorteo y mandá el catálogo: el botón aparece arriba de los sabores.</p>`}
