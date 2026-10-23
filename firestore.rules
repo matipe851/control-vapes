@@ -47,6 +47,28 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+
+    // Sorteo del catálogo: cualquiera se anota (solo crear); solo el administrador lee, edita o borra
+    match /sorteo/{id} {
+      allow create: if id.matches('[a-z0-9]{8,20}')
+        && request.resource.data.keys().hasAll(['nombre','tel','dev','creado'])
+        && request.resource.data.keys().hasOnly(['nombre','tel','dev','creado','ref'])
+        && request.resource.data.nombre is string && request.resource.data.nombre.size() > 0 && request.resource.data.nombre.size() <= 40
+        && request.resource.data.tel is string && request.resource.data.tel.size() >= 8 && request.resource.data.tel.size() <= 20
+        && request.resource.data.dev is string && request.resource.data.dev.size() <= 40
+        && request.resource.data.creado is int
+        && (!('ref' in request.resource.data) || (request.resource.data.ref is string && request.resource.data.ref.size() <= 20));
+      allow read, update, delete: if isAdmin();
+      // Una visita por celular a cada link (no se puede editar ni repetir)
+      match /visitas/{dev} {
+        allow create: if dev.matches('[a-z0-9]{12,40}')
+          && exists(/databases/$(database)/documents/sorteo/$(id))
+          && request.resource.data.keys().hasOnly(['t']) && request.resource.data.t is int;
+        allow read, delete: if isAdmin();
+      }
+    }
+    match /{path=**}/visitas/{dev} { allow read: if isAdmin(); }
+
     match /ventas/{id} {
       allow read: if isMember();
       allow create: if isMember() && request.resource.data.vendedor == request.auth.uid;

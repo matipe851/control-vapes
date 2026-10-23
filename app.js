@@ -1,7 +1,7 @@
 
 (() => {
 const $app = document.getElementById('app');
-const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{}, bulkSel:null, bulk:null, cobroMedio:'Mercado Pago', pedSem:2, kf:{}, blue:null };
+const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', sorteo:{}, sorteoVis:{}, sorteoCfg:null, sorteoReady:false, sorteoErr:null, ganador:null, authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{}, bulkSel:null, bulk:null, cobroMedio:'Mercado Pago', pedSem:2, kf:{}, blue:null };
 const newLine = () => ({prod:'', cant:'1', precio:''});
 const MEDIOS = ['Mercado Pago','Fiado'];
 const COBRO_MEDIOS = ['Mercado Pago'];
@@ -124,6 +124,63 @@ function viewCatalogo(){
     ${items.length?`<div class="split">${items.map(i=>`<span class="pill ${i.pocas?'warn':'mid'}">${esc(i.sabor)} ${i.emoji}${i.ice?'❄️':''} · ${i.precio?money(i.precio):'sin precio'}</span>`).join('')}</div>
     ${items.some(i=>!i.precio)?'<p class="note">Hay sabores sin precio: en el catálogo aparecen como "Consultar". Cargá el precio en Stock.</p>':''}`:'<p class="empty">No hay sabores con stock.</p>'}
     <p class="sub">El cliente ve "Últimas unidades" cuando quedan 2 o menos, y no puede pedir más de lo que hay.</p>
+  </section>`;
+}
+
+// ---------- Sorteo del catálogo ----------
+// Cada participante deja nombre y WhatsApp en el catálogo y recibe su link (?ref=id).
+// Queda participando cuando al menos un celular distinto al suyo entra por ese link; cada celular suma una chance.
+function sorteoRows(){
+  return Object.values(S.sorteo).map(p=>{ const vis=S.sorteoVis[p.id]||{}; const trajo=Object.keys(vis).filter(dev=>dev!==p.dev).length;
+    const de=p.ref&&S.sorteo[p.ref]?S.sorteo[p.ref].nombre:''; return {p, trajo, ok:trajo>=1, de}; })
+    .sort((a,b)=>b.trajo-a.trajo||(b.p.creado||0)-(a.p.creado||0));
+}
+const fechaTs = t => t ? new Date(t).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—';
+// Cada participante nuevo se carga solo en Clientes (si el teléfono ya existe, se vincula a ese cliente)
+const sorteoSyncing=new Set();
+function syncSorteoClientes(){
+  if(S.users[S.me]?.rol!=='admin' || !S.sorteoReady || S.sorteoErr || !S.ready.clientes) return;
+  for(const p of Object.values(S.sorteo)){
+    if(p.clienteId || sorteoSyncing.has(p.id)) continue;
+    sorteoSyncing.add(p.id);
+    const num=waNumber(p.tel);
+    const ex=Object.values(S.clients).find(c=>(num && waNumber(c.contacto)===num));
+    const go = ex ? Promise.resolve(ex.id)
+      : S.db.collection('clientes').add({nombre:String(p.nombre||'Sin nombre').slice(0,50), contacto:String(p.tel||'').slice(0,60), creado:Date.now(), creadoPor:S.me, origen:'Sorteo'}).then(r=>r.id);
+    go.then(cid=>S.db.doc('sorteo/'+p.id).update({clienteId:cid})).catch(err=>{ console.error('sorteo→clientes',err); sorteoSyncing.delete(p.id); });
+  }
+}
+function viewSorteo(){
+  if(S.sorteoErr) return `<section class="panel"><h2>Sorteo</h2><p class="note">El sorteo todavía no está habilitado en la base de datos (faltan las reglas de Firebase). Avisale a Claude para que lo termine de configurar.</p></section>`;
+  const c=S.sorteoCfg||{}; const rows=sorteoRows(); const ok=rows.filter(r=>r.ok); const chances=ok.reduce((a,r)=>a+r.trajo,0);
+  const nuevos=rows.reduce((a,r)=>a+r.trajo,0); const g=S.ganador||c.ganador||null;
+  const waLink=(tel,txt)=>{ const n=waNumber(tel); return n?`<a class="wa" href="https://api.whatsapp.com/send?phone=${n}${txt?`&text=${encodeURIComponent(txt)}`:''}" target="_blank" rel="noopener">${WA_ICON}WhatsApp</a>`:''; };
+  return `<section class="panel"><div class="panel-head"><div><h2>Sorteo</h2><span class="sub">Tus clientes se anotan en el catálogo y comparten su link. Cada persona que entra por un link le suma una chance al que lo compartió.</span></div>
+      <span class="pill ${c.activo?'ok':'mid'}">${c.activo?'Activo en el catálogo':'Pausado'}</span></div>
+    <form class="form" id="f-sorteo" autocomplete="off">
+      <label>Premio<input id="so-premio" maxlength="60" placeholder="un Elf Bar Ice King" value="${esc(c.premio||'')}"></label>
+      <label>Fecha del sorteo<input id="so-fecha" type="date" value="${esc(c.fecha||'')}"></label>
+      <label style="flex-direction:row;display:flex;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" id="so-act" style="width:auto" ${c.activo?'checked':''}> Mostrar el sorteo en el catálogo</label>
+      <button class="btn" type="submit">Guardar</button>
+    </form>
+    <p class="sub">Los que se anotan se cargan solos en Clientes, con su WhatsApp.</p>
+  </section>
+  <div class="kpis">
+    <div class="kpi"><span class="l">Se anotaron</span><span class="v num">${rows.length}</span><span class="h">ya están en Clientes</span></div>
+    <div class="kpi"><span class="l">Participando</span><span class="v num">${ok.length}</span><span class="h">alguien entró por su link</span></div>
+    <div class="kpi"><span class="l">Personas que trajeron</span><span class="v num">${nuevos}</span><span class="h">celulares distintos que entraron</span></div>
+  </div>
+  ${g?`<section class="panel"><div class="panel-head"><h2>Ganador</h2><span class="sub">${esc(fechaTs(g.fecha))}</span></div>
+    <p style="margin:0;font-size:20px"><b>${esc(g.nombre)}</b> <span class="sub">${esc(g.tel||'')}</span></p>
+    <div class="split">${waLink(g.tel,`¡Hola ${g.nombre}! 🎉 Ganaste el sorteo de ${c.premio||'un Ice King'}. Escribime y coordinamos la entrega.`)}<button class="btn ghost sm" data-so-reset>Borrar ganador</button></div></section>`:''}
+  <section class="panel"><div class="panel-head"><h2>Participantes</h2>
+      <button class="btn" data-so-draw ${ok.length?'':'disabled'}>Sortear ganador</button></div>
+    ${ok.length?`<p class="sub">Entran al sorteo los ${ok.length} que trajeron al menos una persona, con ${chances} chance${chances===1?'':'s'} en total. Más gente trajo, más chances tiene.</p>`:''}
+    ${rows.length?`<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>WhatsApp</th><th>Se anotó</th><th class="r">Trajo</th><th>Estado</th><th>Llegó por</th><th></th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td><b>${esc(r.p.nombre)}</b></td><td><span class="contact-cell">${esc(r.p.tel)}${waLink(r.p.tel)}</span></td><td class="num">${fechaTs(r.p.creado)}</td><td class="r num">${r.trajo}</td>
+        <td><span class="pill ${r.ok?'ok':'warn'}">${r.ok?`Participa · ${r.trajo} chance${r.trajo===1?'':'s'}`:'Falta que compartan'}</span></td><td class="sub">${esc(r.de||'—')}</td>
+        <td class="r">${S.confirm==='so-del/'+r.p.id?`<span class="split" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn danger sm" data-so-del-yes="${r.p.id}">Borrar</button><button class="btn ghost sm" data-so-del-no>No</button></span>`:`<button class="btn ghost sm" data-so-del="${r.p.id}" title="Saca a esta persona del sorteo (sigue en Clientes)">Quitar</button>`}</td></tr>`).join('')}
+    </tbody></table></div>`:`<p class="empty">Todavía no se anotó nadie. Activá el sorteo y mandá el catálogo: el botón aparece arriba de los sabores.</p>`}
   </section>`;
 }
 
@@ -346,6 +403,7 @@ function render(){
   if(openDetails){ const d=document.getElementById('msg-det'); if(d) d.open=true; }
   if(active){ const el=document.getElementById(active); if(el && el.tagName!=='BUTTON' && el.tagName!=='A') el.focus(); }
   syncCatalogo();
+  syncSorteoClientes();
 }
 function screen(msg, logout){
   return `<div class="auth"><div class="auth-card"><div class="brand"><div class="brand-mark">CV</div><h1>Control Vapes</h1></div><p>${msg}</p>${logout?'<button class="btn ghost" id="logout">Salir</button>':''}</div></div>`;
@@ -378,11 +436,11 @@ function viewLogin(){
 function viewShell(allReady){
   const me=S.users[S.me]; const admin=me?.rol==='admin';
   const tabs=[['resumen','Resumen'],['ventas','Ventas'],['stock','Stock'],['clientes','Clientes'],['compras','Compras'],['fiado','Fiado'],['sabores','Clientes × sabor']];
-  if(admin) tabs.push(['caja','Cuenta'],['asesor','Asesor'],['catalogo','Catálogo'],['usuarios','Usuarios']);
+  if(admin) tabs.push(['caja','Cuenta'],['asesor','Asesor'],['catalogo','Catálogo'],['sorteo','Sorteo'],['usuarios','Usuarios']);
   tabs.push(['cuenta','Mi cuenta']);
   if(!tabs.some(t=>t[0]===S.tab)) S.tab='resumen';
   const body = !allReady ? `<div class="panel"><p class="empty">Cargando datos…</p></div>` :
-    ({resumen:viewResumen, ventas:viewVentas, stock:viewStock, clientes:viewClientes, compras:viewCompras, fiado:viewFiado, sabores:viewMatrix, usuarios:viewUsuarios, catalogo:viewCatalogo, asesor:viewAsesor, cuenta:viewCuenta, caja:viewCaja})[S.tab]();
+    ({resumen:viewResumen, ventas:viewVentas, stock:viewStock, clientes:viewClientes, compras:viewCompras, fiado:viewFiado, sabores:viewMatrix, usuarios:viewUsuarios, catalogo:viewCatalogo, sorteo:viewSorteo, asesor:viewAsesor, cuenta:viewCuenta, caja:viewCaja})[S.tab]();
   return `<header class="top"><div class="top-in">
       <div class="top-row"><div class="brand"><div class="brand-mark">CV</div><h1>Control Vapes</h1></div>
         <div class="who"><span><b>${esc(me?.nombre||me?.usuario||'')}</b> · ${admin?'Administrador':'Vendedor'}</span><button class="btn ghost sm" id="logout">Salir</button></div></div>
@@ -1048,6 +1106,19 @@ function bindApp(){
   q('[data-cobrar-v]',b=>b.onclick=()=>{ const v=S.ventas[b.dataset.cobrarV]; save(()=>S.db.doc('ventas/'+v.id).update({medio:S.cobroMedio, fiado:true, cobrado:today(), cobradoPor:S.me}), `Cobrado ${money(ventaTotal(v))} en ${S.cobroMedio}`); });
   const ps=document.getElementById('ped-sem'); if(ps) ps.onchange=()=>{ S.pedSem=Number(ps.value)||2; ssSet('cv_pedsem',String(S.pedSem)); render(); };
   q('[data-ped-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(textoPedido(pedido())); toast('Pedido copiado'); }catch(e){ toast('No se pudo copiar'); } });
+
+  const fso=document.getElementById('f-sorteo');
+  if(fso) fso.onsubmit=e=>{ e.preventDefault();
+    save(()=>S.db.doc('catalogo/sorteo').set({activo:document.getElementById('so-act').checked, premio:document.getElementById('so-premio').value.trim()||'un Elf Bar Ice King', fecha:document.getElementById('so-fecha').value||'', actualizado:Date.now()},{merge:true}), 'Sorteo guardado'); };
+  q('[data-so-draw]',b=>b.onclick=()=>{ const ok=sorteoRows().filter(r=>r.ok); if(!ok.length) return;
+    const tot=ok.reduce((a,r)=>a+r.trajo,0); const x=crypto.getRandomValues(new Uint32Array(1))[0]/4294967296*tot; let acc=0, win=ok[ok.length-1];
+    for(const r of ok){ acc+=r.trajo; if(x<acc){ win=r; break; } }
+    const g={id:win.p.id, nombre:win.p.nombre, tel:win.p.tel, fecha:Date.now(), chances:win.trajo, total:tot};
+    S.ganador=g; render(); save(()=>S.db.doc('catalogo/sorteo').set({ganador:g},{merge:true}), `Ganó ${win.p.nombre}`); });
+  q('[data-so-reset]',b=>b.onclick=()=>{ S.ganador=null; save(()=>S.db.doc('catalogo/sorteo').set({ganador:firebase.firestore.FieldValue.delete()},{merge:true}), 'Ganador borrado'); });
+  q('[data-so-del]',b=>b.onclick=()=>{ S.confirm='so-del/'+b.dataset.soDel; render(); });
+  q('[data-so-del-no]',b=>b.onclick=()=>{ S.confirm=null; render(); });
+  q('[data-so-del-yes]',b=>b.onclick=()=>{ const id=b.dataset.soDelYes; S.confirm=null; save(()=>S.db.doc('sorteo/'+id).delete(), 'Quitado del sorteo'); });
   q('[data-cat-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(catalogoURL()); toast('Link copiado'); }catch(e){ toast('No se pudo copiar'); } });
   const fcat=document.getElementById('f-cat');
   if(fcat) fcat.onsubmit=e=>{ e.preventDefault(); const txt=document.getElementById('cat-tel').value.trim(); const num=waNumber(txt);
@@ -1279,6 +1350,11 @@ function startData(uid){
     const first=!S.ready.usuarios; S.ready.usuarios=true;
     if(first && m[uid]){ sub('productos','prods'); sub('clientes','clients'); sub('ventas','ventas'); sub('compras','compras');
       unsubs.push(S.db.doc('catalogo/actual').onSnapshot(d=>{ S.catalogo=d.exists?d.data():null; S.catReady=true; S.catErr=null; scheduleRender(); }, err=>{ S.catErr=err.code||'error'; S.catReady=true; scheduleRender(); }));
+      if(m[uid].rol==='admin'){
+        unsubs.push(S.db.collection('sorteo').onSnapshot(snap=>{ const o={}; snap.docs.forEach(d=>o[d.id]={id:d.id,...d.data()}); S.sorteo=o; S.sorteoReady=true; S.sorteoErr=null; scheduleRender(); }, err=>{ console.error('sorteo',err); S.sorteoErr=err.code||'error'; S.sorteoReady=true; scheduleRender(); }));
+        unsubs.push(S.db.collectionGroup('visitas').onSnapshot(snap=>{ const o={}; snap.docs.forEach(d=>{ const pid=d.ref.parent.parent?.id; if(!pid) return; (o[pid]=o[pid]||{})[d.id]=d.data().t||0; }); S.sorteoVis=o; scheduleRender(); }, err=>{ console.error('visitas',err); }));
+        unsubs.push(S.db.doc('catalogo/sorteo').onSnapshot(d=>{ S.sorteoCfg=d.exists?d.data():null; scheduleRender(); }, err=>{ console.error('sorteo cfg',err); }));
+      }
       if(m[uid].rol==='admin') unsubs.push(S.db.collection('stats').onSnapshot(snap=>{ const o={}; snap.docs.forEach(d=>o[d.id]=d.data()); S.stats=o; scheduleRender(); }, err=>{ console.error('stats',err); S.stats=null; })); }
     scheduleRender();
   }, err=>{ S.ready.usuarios=true; S.users={}; scheduleRender(); }));
