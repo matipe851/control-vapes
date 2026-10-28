@@ -1,7 +1,7 @@
 
 (() => {
 const $app = document.getElementById('app');
-const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', sorteo:{}, sorteoVis:{}, sorteoCfg:null, sorteoReady:false, sorteoErr:null, ganador:null, authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{}, bulkSel:null, bulk:null, cobroMedio:'Mercado Pago', pedSem:2, kf:{}, blue:null };
+const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', sorteo:{}, sorteoVis:{}, sorteoCfg:null, sorteoReady:false, sorteoErr:null, ganador:null, authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{}, bulkSel:null, bulk:null, bulkMsg:'stock', cobroMedio:'Mercado Pago', pedSem:2, kf:{}, blue:null };
 const newLine = () => ({prod:'', cant:'1', precio:''});
 const MEDIOS = ['Mercado Pago','Fiado'];
 const COBRO_MEDIOS = ['Mercado Pago'];
@@ -172,6 +172,12 @@ const sorteoLink = () => catalogoURL()+'?sorteo';
 function sorteoInvitacion(){ const c=S.sorteoCfg||{}; const min=sorteoMin();
   const f=c.fecha?` El ${fmtDate(c.fecha)} sorteo`:' Sorteo'; 
   return `🎁${f} ${c.premio||'un Elf Bar Ice King'}. Anotate gratis acá (nombre, apellido y WhatsApp) y reenviá tu link a ${min} persona${min===1?'':'s'} para participar 👇\n${sorteoLink()}`; }
+function sorteoRecordatorio(){ const c=S.sorteoCfg||{}; const min=sorteoMin(); const n=min===1?'1 amigo':`${min} amigos`;
+  let dia='', fecha='';
+  if(c.fecha){ const [y,m,d]=c.fecha.split('-').map(Number); dia=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'][new Date(y,m-1,d).getDay()]; fecha=`${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}`; }
+  const premio=c.premio||'un Elf Bar Ice King';
+  return `🎁 *¡Últimos días para el sorteo!* 🎁\n\n${dia?`Este *${dia} ${fecha}* sorteo`:'Sorteo'} *${premio}* 🧊👑\n\nPara participar:\n1️⃣ Anotate gratis acá (nombre, apellido y WhatsApp) 👇\n${sorteoLink()}\n2️⃣ Reenviá tu link a *${n}*\n\n⚠️ *Importante:* no alcanza con mandarles el link. *${min===1?'Tu amigo TIENE':'Tus '+n+' TIENEN'} que anotarse* desde tu link. Si no se ${min===1?'anota':'anotan'}, *no entrás al sorteo* ❌\n\nCada amigo que se anota es *una chance más* 🍀\n¿Ya te anotaste? Fijate que tus amigos completen el formulario${dia?' antes del '+dia:''} 😉`; }
+const mensajeBulk = () => S.bulkMsg==='sorteo' ? sorteoRecordatorio() : mensajeStock();
 function viewSorteo(){
   if(S.sorteoErr) return `<section class="panel"><h2>Sorteo</h2><p class="note">El sorteo todavía no está habilitado en la base de datos (faltan las reglas de Firebase). Avisale a Claude para que lo termine de configurar.</p></section>`;
   const c=S.sorteoCfg||{}; const rows=sorteoRows(); const ok=rows.filter(r=>r.ok); const chances=ok.reduce((a,r)=>a+r.trajo,0);
@@ -192,6 +198,10 @@ function viewSorteo(){
     <div class="split"><input id="so-link" readonly value="${esc(sorteoLink())}" style="flex:1;min-width:220px"><button class="btn ghost" data-so-copy>Copiar link</button>
       <a class="wa" style="padding:10px 16px;font-size:14px" href="https://api.whatsapp.com/send?text=${encodeURIComponent(sorteoInvitacion())}" target="_blank" rel="noopener">${WA_ICON}Compartir</a></div>
     ${c.activo?'':'<p class="note">El sorteo está pausado: con el link se abre el catálogo pero no el formulario. Activalo arriba para que funcione.</p>'}
+  </section>
+  <section class="panel"><div class="panel-head"><div><h2>Recordatorio a todos tus clientes</h2><span class="sub">Avisa que son los últimos días y que los amigos tienen que anotarse sí o sí.</span></div>
+    <div class="split"><button class="btn" data-so-remind ${conTel().length?'':'disabled'}>${WA_ICON.replace('<svg','<svg style="width:14px;height:14px;fill:currentColor;vertical-align:-2px"')} Enviar a todos (${conTel().length})</button><button class="btn ghost" data-so-remind-copy>Copiar mensaje</button></div></div>
+    <pre style="white-space:pre-wrap;margin:0;font:inherit;font-size:14px;background:var(--surface-2);padding:12px;border-radius:10px">${esc(sorteoRecordatorio())}</pre>
   </section>
   <div class="kpis">
     <div class="kpi"><span class="l">Se anotaron</span><span class="v num">${rows.filter(r=>!r.dup).length}</span><span class="h">ya están en Clientes</span></div>
@@ -232,13 +242,13 @@ const conTel = () => Object.values(S.clients).filter(c=>waNumber(c.contacto)).so
 const freqTxt = o => o.freq==null ? '—' : `${Math.round(o.freq)} d${o.freqEstimada?' <span class="sub" title="Una sola compra: se usa la frecuencia típica de tus clientes">(est.)</span>':(o.tol?` <span class="sub">±${o.tol}</span>`:'')}`;
 const faltanTxt = o => o.faltan==null ? '' : o.faltan>0 ? `en ${o.faltan} d` : o.faltan===0 ? 'hoy' : `hace ${-o.faltan} d`;
 const paraContactarIds = () => Object.values(clientStats()).filter(o=>(o.estado[0]==='Contactar'||o.estado[0]==='Inactivo') && waNumber(o.c.contacto)).map(o=>o.c.id);
-function waHref(c){ return `https://api.whatsapp.com/send?phone=${waNumber(c.contacto)}&text=${encodeURIComponent(mensajeStock())}`; }
-function startBulk(ids){ const q=ids.filter(id=>S.clients[id] && waNumber(S.clients[id].contacto)); if(!q.length) return toast('No hay clientes con teléfono para enviar'); S.bulk={ids:q, i:0}; S.tab='clientes'; ssSet('cv_tab','clientes'); render(); document.getElementById('bulk')?.scrollIntoView({block:'start'}); }
+function waHref(c){ return `https://api.whatsapp.com/send?phone=${waNumber(c.contacto)}&text=${encodeURIComponent(mensajeBulk())}`; }
+function startBulk(ids,msg){ if(msg) S.bulkMsg=msg; const q=ids.filter(id=>S.clients[id] && waNumber(S.clients[id].contacto)); if(!q.length) return toast('No hay clientes con teléfono para enviar'); S.bulk={ids:q, i:0}; S.tab='clientes'; ssSet('cv_tab','clientes'); render(); document.getElementById('bulk')?.scrollIntoView({block:'start'}); }
 function viewBulk(){
   const list=conTel();
   if(S.bulk){
     const {ids,i}=S.bulk; const done=i>=ids.length; const c=done?null:S.clients[ids[i]];
-    return `<section class="panel" id="bulk"><div class="panel-head"><h2>Envío masivo</h2><span class="sub num">${Math.min(i,ids.length)} de ${ids.length} abiertos</span></div>
+    return `<section class="panel" id="bulk"><div class="panel-head"><h2>Envío masivo</h2><span class="sub num">${S.bulkMsg==='sorteo'?'Recordatorio del sorteo · ':''}${Math.min(i,ids.length)} de ${ids.length} abiertos</span></div>
       <div class="bar"><i style="width:${(Math.min(i,ids.length)/ids.length*100).toFixed(1)}%"></i></div>
       ${done?`<p class="note">Listo, abriste los ${ids.length} chats.</p><div class="split"><button class="btn" data-bulk-end>Terminar</button></div>`
       :`<p class="sub">WhatsApp no deja mandar a varios de una sola vez desde una página: tocá el botón, mandá el mensaje en WhatsApp y volvé acá para el siguiente.</p>
@@ -248,8 +258,9 @@ function viewBulk(){
     </section>`;
   }
   const sel=S.bulkSel||new Set();
-  return `<section class="panel" id="bulk"><div class="panel-head"><div><h2>Envío masivo</h2><span class="sub">Elegí a quiénes mandarles la lista de sabores en stock</span></div>
+  return `<section class="panel" id="bulk"><div class="panel-head"><div><h2>Envío masivo</h2><span class="sub">Elegí qué mensaje mandar y a quiénes</span></div>
     <div class="split"><button class="btn ghost sm" data-bulk-all>Todos (${list.length})</button><button class="btn ghost sm" data-bulk-pc>Para contactar (${paraContactarIds().length})</button><button class="btn ghost sm" data-bulk-none>Ninguno</button></div></div>
+    <div class="split"><span class="sub">Mensaje:</span><button class="btn ${S.bulkMsg==='sorteo'?'ghost':''} sm" data-bulk-msg="stock">Sabores en stock</button>${S.sorteoCfg?.activo?`<button class="btn ${S.bulkMsg==='sorteo'?'':'ghost'} sm" data-bulk-msg="sorteo">🎁 Recordatorio del sorteo</button>`:''}</div>
     ${list.length?`<div class="split">${list.map(c=>`<label style="display:inline-flex;flex-direction:row;align-items:center;gap:6px;color:var(--fg);font-size:14px;background:var(--surface-2);padding:5px 10px;border-radius:8px;cursor:pointer"><input type="checkbox" style="width:auto" data-bulk-c="${c.id}" ${sel.has(c.id)?'checked':''}>${esc(c.nombre)}</label>`).join('')}</div>
     <div class="split"><button class="btn" data-bulk-go ${sel.size?'':'disabled'}>Empezar envío (${sel.size})</button><button class="btn ghost" data-bulk-copy>Copiar mensaje</button></div>
     <p class="sub">"Copiar mensaje" sirve para pegarlo en una lista de difusión o en un estado de WhatsApp.</p>`
@@ -1122,11 +1133,14 @@ function bindApp(){
   q('[data-bulk-pc]',b=>b.onclick=()=>{ S.bulkSel=new Set(paraContactarIds()); render(); });
   q('[data-bulk-none]',b=>b.onclick=()=>{ S.bulkSel=new Set(); render(); });
   q('[data-bulk-go]',b=>b.onclick=()=>startBulk([...(S.bulkSel||[])]));
-  q('[data-bulk-pc-go]',b=>b.onclick=()=>startBulk(paraContactarIds()));
+  q('[data-bulk-msg]',b=>b.onclick=()=>{ S.bulkMsg=b.dataset.bulkMsg; render(); });
+  q('[data-so-remind]',b=>b.onclick=()=>startBulk(conTel().map(c=>c.id),'sorteo'));
+  q('[data-so-remind-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(sorteoRecordatorio()); toast('Mensaje copiado'); }catch(e){ toast('No se pudo copiar'); } });
+  q('[data-bulk-pc-go]',b=>b.onclick=()=>startBulk(paraContactarIds(),'stock'));
   q('[data-bulk-next]',a=>a.onclick=()=>{ setTimeout(()=>{ if(S.bulk){ S.bulk.i++; render(); } },400); });
   q('[data-bulk-skip]',b=>b.onclick=()=>{ S.bulk.i++; render(); });
   q('[data-bulk-end]',b=>b.onclick=()=>{ S.bulk=null; S.bulkSel=null; render(); });
-  q('[data-bulk-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(mensajeStock()); toast('Mensaje copiado'); }catch(e){ toast('No se pudo copiar'); } });
+  q('[data-bulk-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(mensajeBulk()); toast('Mensaje copiado'); }catch(e){ toast('No se pudo copiar'); } });
   const cm=document.getElementById('cobro-medio'); if(cm) cm.onchange=()=>{ S.cobroMedio=cm.value; };
   q('[data-cobrar]',b=>b.onclick=()=>{ S.confirm='cobrar/'+b.dataset.cobrar; render(); });
   q('[data-cobrar-yes]',b=>b.onclick=async()=>{ const cid=b.dataset.cobrarYes; S.confirm=null; const vs=Object.values(S.ventas).filter(v=>v.clienteId===cid&&esFiado(v));
