@@ -439,6 +439,7 @@ function render(){
   const openDetails = !!document.getElementById('msg-det')?.open;
   $app.innerHTML = viewShell(allReady);
   bindApp();
+  labelTables();
   if(openDetails){ const d=document.getElementById('msg-det'); if(d) d.open=true; }
   if(active){ const el=document.getElementById(active); if(el && el.tagName!=='BUTTON' && el.tagName!=='A') el.focus(); }
   syncCatalogo();
@@ -446,6 +447,14 @@ function render(){
 }
 function screen(msg, logout){
   return `<div class="auth"><div class="auth-card"><div class="brand"><div class="brand-mark">CV</div><h1>Control Vapes</h1></div><p>${msg}</p>${logout?'<button class="btn ghost" id="logout">Salir</button>':''}</div></div>`;
+}
+// En el celular las tablas se muestran como tarjetas: cada celda lleva el nombre de su columna
+function labelTables(){
+  document.querySelectorAll('.tbl-wrap table:not(.matrix)').forEach(t=>{
+    const hs=[...t.querySelectorAll('thead th')].map(th=>th.textContent.trim());
+    if(!hs.length) return; t.classList.add('cards');
+    t.querySelectorAll('tbody tr').forEach(tr=>{ let i=0; [...tr.children].forEach(td=>{ if(hs[i]&&!td.dataset.label) td.dataset.label=hs[i]; i+=td.colSpan||1; }); });
+  });
 }
 function bindLogout(){ const b=document.getElementById('logout'); if(b) b.onclick=()=>S.auth.signOut(); }
 
