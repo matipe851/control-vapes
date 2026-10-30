@@ -1,5 +1,5 @@
 {
- "actualizado": "2026-10-29T17:31:56Z",
+ "actualizado": "2026-10-30T17:10:37Z",
  "minimo": 31990,
  "promedio": 32445,
  "tiendas": [
@@ -87,6 +87,11 @@
   },
   {
    "fecha": "2026-10-29",
+   "minimo": 31990,
+   "promedio": 32445
+  },
+  {
+   "fecha": "2026-10-30",
    "minimo": 31990,
    "promedio": 32445
   }
