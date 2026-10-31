@@ -74,14 +74,24 @@ const fechaCorta=iso=>{ if(!iso) return ''; const [y,m,d]=iso.split('-'); return
 const hoy=()=>{ const d=new Date(), p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
 const fail=t=>{ $('app').innerHTML=`${brand}<h1>Ups</h1><p class="lead">${t}</p><a class="btn plain" href="${CAT}">Ver el catálogo</a>`; };
 
-const token=new URLSearchParams(location.search).get('c')||'';
-if(!/^[a-z0-9]{12,40}$/.test(token)) return fail('Este link no es válido. Usá el link que te llegó por WhatsApp.');
+const qs=new URLSearchParams(location.search);
+const token=qs.get('c')||'';
+// Modo prueba: raspa.html?demo=10off o ?demo=gracias (no usa ninguna tarjeta real ni guarda nada)
+const demo=qs.get('demo');
+if(!demo && !/^[a-z0-9]{12,40}$/.test(token)) return fail('Este link no es válido. Usá el link que te llegó por WhatsApp.');
 
 firebase.initializeApp(window.FIREBASE_CONFIG);
 const db=firebase.firestore();
 let R=null, tel=null;
 
-Promise.all([
+if(demo){
+  const venc=qs.get('vence')||'2026-11-07';
+  R={nombre:'Cliente de Prueba', premio:demo==='10off'?'10off':'gracias', codigo:'IK-PRUEB', vence:venc, raspado:false};
+  document.title='Prueba · Raspa y gana';
+  db.doc('catalogo/actual').get().then(cat=>{ tel=cat.exists?String(cat.data().telefono||'').replace(/\D/g,''):null; }).catch(()=>{}).finally(()=>{ draw();
+    const b=document.createElement('p'); b.className='small'; b.style.cssText='margin-top:22px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px';
+    b.innerHTML='Tarjeta de prueba: no cuenta como raspada. <a href="?demo=10off">Ver con 10% OFF</a> · <a href="?demo=gracias">Ver sin premio</a>'; $('app').appendChild(b); });
+} else Promise.all([
   db.doc('raspa/'+token).get(),
   db.doc('catalogo/actual').get().catch(()=>null)
 ]).then(([d,cat])=>{
@@ -156,7 +166,7 @@ function scratch(){
   $('reveal').onclick=reveal;
   function reveal(){
     if(done) return; done=true; cv.classList.add('gone'); $('hint')?.remove(); $('after').hidden=false;
-    db.doc('raspa/'+token).update({raspado:true, raspadoEn:Date.now()}).catch(e=>console.error('raspado',e));
+    if(!demo) db.doc('raspa/'+token).update({raspado:true, raspadoEn:Date.now()}).catch(e=>console.error('raspado',e));
     setTimeout(()=>$('after').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'}),400);
   }
 }

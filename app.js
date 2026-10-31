@@ -252,7 +252,8 @@ function viewRaspa(){
         <label>¿A quiénes?<select id="ra-quienes"><option value="todos">Todos los anotados menos el ganador (${todos})</option><option value="part">Solo los que entraron al sorteo, menos el ganador (${part})</option></select></label>
         <button class="btn" type="submit">Crear tarjetas</button>
       </form>
-      <p class="sub">Los premios se reparten al azar al crear las tarjetas. Ninguna trae el vape.</p></section>`;
+      <p class="sub">Los premios se reparten al azar al crear las tarjetas. Ninguna trae el vape.</p>
+      <div class="split"><span class="sub">Probar cómo se ven:</span><a class="btn ghost sm" href="raspa.html?demo=10off" target="_blank" rel="noopener" style="text-decoration:none">Tarjeta con 10% OFF</a><a class="btn ghost sm" href="raspa.html?demo=gracias" target="_blank" rel="noopener" style="text-decoration:none">Tarjeta sin premio</a></div></section>`;
   }
   const rasp=list.filter(r=>r.raspado), premios=list.filter(r=>r.premio==='10off'), fin=rasp.length===list.length;
   const rb=S.rbulk; const pend=list.filter(r=>waNumber(r.tel));
