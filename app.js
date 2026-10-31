@@ -1,7 +1,7 @@
 
 (() => {
 const $app = document.getElementById('app');
-const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', sorteo:{}, sorteoVis:{}, sorteoCfg:null, sorteoReady:false, sorteoErr:null, ganador:null, authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{}, bulkSel:null, bulk:null, bulkMsg:'stock', cobroMedio:'Mercado Pago', pedSem:2, kf:{}, blue:null };
+const S = { db:null, auth:null, adminExists:null, authChecked:false, me:null, users:{}, prods:{}, clients:{}, ventas:{}, compras:{}, ready:{usuarios:false,productos:false,clientes:false,ventas:false,compras:false}, tab:'resumen', period:'mes', sorteo:{}, sorteoVis:{}, sorteoCfg:null, sorteoReady:false, sorteoErr:null, raspa:{}, raspaCfg:null, raspaErr:null, rbulk:null, ganador:null, authErr:'', confirm:null, ventaClienteNuevo:false, vLines:null, vf:{}, bulkSel:null, bulk:null, bulkMsg:'stock', cobroMedio:'Mercado Pago', pedSem:2, kf:{}, blue:null };
 const newLine = () => ({prod:'', cant:'1', precio:''});
 const MEDIOS = ['Mercado Pago','Fiado'];
 const COBRO_MEDIOS = ['Mercado Pago'];
@@ -211,6 +211,7 @@ function viewSorteo(){
   ${g?`<section class="panel"><div class="panel-head"><h2>Ganador</h2><span class="sub">${esc(fechaTs(g.fecha))}</span></div>
     <p style="margin:0;font-size:20px"><b>${esc(g.nombre)}</b> <span class="sub">${esc(g.tel||'')}</span></p>
     <div class="split">${waLink(g.tel,`¡Hola ${g.nombre}! 🎉 Ganaste el sorteo de ${c.premio||'un Ice King'}. Escribime y coordinamos la entrega.`)}<button class="btn ghost sm" data-so-reset>Borrar ganador</button></div></section>`:''}
+  ${viewRaspa()}
   <section class="panel"><div class="panel-head"><h2>Participantes</h2>
       <a class="btn" href="sorteo.html" target="_blank" rel="noopener" style="text-decoration:none">Ir a la sala del sorteo</a></div>
     ${ok.length?`<p class="sub">Entran al sorteo los ${ok.length} que tienen ${min} o más amigos anotados, con ${chances} chance${chances===1?'':'s'} en total. Cada amigo anotado es una chance.</p>`:`<p class="sub">Para entrar al sorteo, cada uno necesita ${min} amigos anotados por su link.</p>`}
@@ -220,6 +221,81 @@ function viewSorteo(){
         <td class="r">${S.confirm==='so-del/'+r.p.id?`<span class="split" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn danger sm" data-so-del-yes="${r.p.id}">Borrar</button><button class="btn ghost sm" data-so-del-no>No</button></span>`:`<button class="btn ghost sm" data-so-del="${r.p.id}" title="Saca a esta persona del sorteo (sigue en Clientes)">Quitar</button>`}</td></tr>`).join('')}
     </tbody></table></div>`:`<p class="empty">Todavía no se anotó nadie. Activá el sorteo y mandá el catálogo: el botón aparece arriba de los sabores.</p>`}
   </section>`;
+}
+
+// ---------- Raspa y gana (consuelo para los que no ganaron el sorteo) ----------
+// Cada persona recibe un link propio (raspa.html?c=TOKEN). La tarjeta se raspa una sola vez.
+// Los premios se reparten al crear las tarjetas: N con 10% OFF (código único) y el resto "gracias por participar".
+const RASPA_BASE = 'https://matipe851.github.io/control-vapes/raspa.html?c=';
+const raspaLink = r => RASPA_BASE + r.id;
+const rndStr = (n, abc) => { const a=crypto.getRandomValues(new Uint32Array(n)); return [...a].map(x=>abc[x%abc.length]).join(''); };
+const fechaCorta = iso => { if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${d}/${m}`; };
+// Los que no ganaron: sin repetidos y sin el ganador
+function raspaCandidatos(soloParticipantes){
+  const c=S.sorteoCfg||{}; const g=S.ganador||c.ganador||null; const gt=g?(waNumber(g.tel)||g.tel):null;
+  return sorteoRows().filter(r=>!r.dup && (!soloParticipantes || r.ok) && (waNumber(r.p.tel)||r.p.tel)!==gt && (!g || r.p.id!==g.id));
+}
+function raspaMensaje(r){
+  return `¡Hola ${String(r.nombre||'').split(' ')[0]}! 🧊 Gracias por participar del sorteo del Ice King.\n\nEsta vez el sorteo no salió para vos, pero por haber participado te ganaste un *Raspa y Gana* 🎟️ con premios sorpresa.\n\nRaspalo acá 👇\n${raspaLink(r)}\n\nEs personal y se puede raspar *una sola vez*. ¡Suerte! 🍀`;
+}
+const raspaList = () => Object.values(S.raspa||{}).sort((a,b)=>(a.orden||0)-(b.orden||0));
+function viewRaspa(){
+  const c=S.raspaCfg||{}; const list=raspaList();
+  const waLnk=(tel,txt,label)=>{ const n=waNumber(tel); return n?`<a class="wa" href="https://api.whatsapp.com/send?phone=${n}${txt?`&text=${encodeURIComponent(txt)}`:''}" target="_blank" rel="noopener">${WA_ICON}${label||'WhatsApp'}</a>`:''; };
+  if(S.raspaErr) return `<section class="panel"><h2>Raspa y gana</h2><p class="note">El raspa y gana todavía no está habilitado en la base de datos (faltan las reglas de Firebase). Avisale a Claude para que lo termine de configurar.</p></section>`;
+  if(!list.length){
+    const part=raspaCandidatos(true).length, todos=raspaCandidatos(false).length;
+    return `<section class="panel"><div class="panel-head"><div><h2>Raspa y gana</h2><span class="sub">Premio consuelo para los que no ganaron: cada uno recibe por WhatsApp su propia tarjeta para raspar, una sola vez. Algunas traen 10% OFF con un código único y el resto dice gracias por participar.</span></div></div>
+      <form class="form" id="f-raspa" autocomplete="off">
+        <label>Tarjetas con 10% OFF<input id="ra-n" type="number" min="0" max="50" inputmode="numeric" value="4"></label>
+        <label>Descuento válido hasta<input id="ra-vence" type="date" value="2026-11-07"></label>
+        <label>¿A quiénes?<select id="ra-quienes"><option value="todos">Todos los anotados menos el ganador (${todos})</option><option value="part">Solo los que entraron al sorteo, menos el ganador (${part})</option></select></label>
+        <button class="btn" type="submit">Crear tarjetas</button>
+      </form>
+      <p class="sub">Los premios se reparten al azar al crear las tarjetas. Ninguna trae el vape.</p></section>`;
+  }
+  const rasp=list.filter(r=>r.raspado), premios=list.filter(r=>r.premio==='10off'), fin=rasp.length===list.length;
+  const rb=S.rbulk; const pend=list.filter(r=>waNumber(r.tel));
+  let bulk='';
+  if(rb){ const done=rb.i>=rb.ids.length; const r=done?null:S.raspa[rb.ids[rb.i]];
+    bulk=`<div class="bar"><i style="width:${(Math.min(rb.i,rb.ids.length)/rb.ids.length*100).toFixed(1)}%"></i></div>
+      ${done?`<p class="note">Listo, abriste los ${rb.ids.length} chats.</p><div class="split"><button class="btn" data-rb-end>Terminar</button></div>`
+      :`<p class="sub">Tocá el botón, mandá el mensaje en WhatsApp y volvé acá para el siguiente.</p>
+      <div class="split"><a class="wa" style="padding:10px 16px;font-size:15px" href="https://api.whatsapp.com/send?phone=${waNumber(r.tel)}&text=${encodeURIComponent(raspaMensaje(r))}" target="_blank" rel="noopener" data-rb-next>${WA_ICON}Abrir chat de ${esc(r.nombre)} (${rb.i+1}/${rb.ids.length})</a>
+      <button class="btn ghost sm" data-rb-skip>Saltear</button><button class="btn ghost sm" data-rb-end>Cancelar</button></div>`}`;
+  }
+  return `<section class="panel"><div class="panel-head"><div><h2>Raspa y gana</h2><span class="sub">${premios.length} con 10% OFF válido hasta el ${fechaCorta(c.vence)} · el resto, gracias por participar. Cada link se raspa una sola vez.</span></div>
+      <span class="pill ${fin?'bad':'ok'}">${fin?'Juego terminado':'En juego'}</span></div>
+    <div class="kpis">
+      <div class="kpi"><span class="l">Tarjetas</span><span class="v num">${list.length}</span><span class="h">una por persona</span></div>
+      <div class="kpi"><span class="l">Ya rasparon</span><span class="v num">${rasp.length}</span><span class="h">${fin?'no quedan tarjetas':`faltan ${list.length-rasp.length}`}</span></div>
+      <div class="kpi"><span class="l">Descuentos usados</span><span class="v num">${premios.filter(r=>r.canjeado).length} de ${premios.length}</span><span class="h">códigos canjeados</span></div>
+    </div>
+    ${fin?'<p class="note">Todos rasparon su tarjeta: el juego terminó.</p>':''}
+    ${rb?bulk:`<div class="split"><button class="btn" data-rb-go ${pend.length?'':'disabled'}>${WA_ICON.replace('<svg','<svg style="width:14px;height:14px;fill:currentColor;vertical-align:-2px"')} Enviar a todos (${pend.length})</button></div>`}
+    <pre style="white-space:pre-wrap;margin:0;font:inherit;font-size:14px;background:var(--surface-2);padding:12px;border-radius:10px">${esc(raspaMensaje(list[0]))}</pre>
+    <form class="split" id="f-canje" autocomplete="off"><input id="ra-cod" maxlength="12" placeholder="Código, ej. IK-7KQ3P" style="flex:1;min-width:180px;text-transform:uppercase"><button class="btn ghost" type="submit">Canjear código</button></form>
+    <div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>WhatsApp</th><th>Tarjeta</th><th>Premio</th><th></th></tr></thead><tbody>
+      ${list.map(r=>`<tr><td><b>${esc(r.nombre)}</b></td><td><span class="contact-cell">${esc(r.tel||'')}${waLnk(r.tel,raspaMensaje(r),'Mandar')}</span></td>
+        <td>${r.raspado?`<span class="pill ok">Raspó · ${fechaTs(r.raspadoEn)}</span>`:'<span class="pill mid">Sin raspar</span>'}</td>
+        <td>${r.premio==='10off'?`<b>10% OFF</b> <span class="num">${esc(r.codigo)}</span>`:'<span class="sub">Gracias por participar</span>'}</td>
+        <td class="r">${r.premio==='10off'?(r.canjeado?`<span class="pill ok">Canjeado ${fechaTs(r.canjeadoEn)}</span>`:`<button class="btn ghost sm" data-ra-canje="${r.id}" ${r.raspado?'':'disabled title="Todavía no raspó"'}>Marcar canjeado</button>`):''}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="split">${S.confirm==='ra-reset'?`<span class="sub">¿Borrar todas las tarjetas? Los links que mandaste dejan de andar.</span><button class="btn danger sm" data-ra-reset-yes>Borrar</button><button class="btn ghost sm" data-ra-reset-no>No</button>`:`<button class="btn ghost sm" data-ra-reset>Borrar tarjetas</button>`}</div>
+  </section>`;
+}
+async function crearRaspa(n, vence, soloPart){
+  const cands=raspaCandidatos(soloPart); if(!cands.length) return toast('No hay a quién mandarle');
+  // mezcla al azar (Fisher-Yates con crypto)
+  const arr=[...cands]; for(let i=arr.length-1;i>0;i--){ const j=crypto.getRandomValues(new Uint32Array(1))[0]%(i+1); [arr[i],arr[j]]=[arr[j],arr[i]]; }
+  const usados=new Set(); const codigo=()=>{ let k; do{ k='IK-'+rndStr(5,'ABCDEFGHJKMNPQRSTUVWXYZ23456789'); }while(usados.has(k)); usados.add(k); return k; };
+  const premiados=new Set(arr.slice(0,Math.min(n,arr.length)).map(r=>r.p.id));
+  const orden=[...cands].sort((a,b)=>String(a.p.nombre).localeCompare(String(b.p.nombre)));
+  const bt=S.db.batch(); const now=Date.now();
+  orden.forEach((r,i)=>{ const id=rndStr(20,'abcdefghijklmnopqrstuvwxyz0123456789'); const gana=premiados.has(r.p.id);
+    bt.set(S.db.doc('raspa/'+id), {nombre:String(r.p.nombre||'').slice(0,40), tel:String(r.p.tel||''), sorteoId:r.p.id, premio:gana?'10off':'gracias', ...(gana?{codigo:codigo()}:{}), vence, raspado:false, orden:i, creado:now}); });
+  bt.set(S.db.doc('catalogo/raspa'), {vence, premios:premiados.size, total:orden.length, creado:now});
+  await save(()=>bt.commit(), `Listo: ${orden.length} tarjetas, ${premiados.size} con 10% OFF`);
 }
 
 // Normaliza un teléfono argentino al formato de WhatsApp: 549 + área (sin 0) + número (sin 15)
@@ -1171,6 +1247,24 @@ function bindApp(){
   q('[data-so-del]',b=>b.onclick=()=>{ S.confirm='so-del/'+b.dataset.soDel; render(); });
   q('[data-so-del-no]',b=>b.onclick=()=>{ S.confirm=null; render(); });
   q('[data-so-del-yes]',b=>b.onclick=()=>{ const id=b.dataset.soDelYes; S.confirm=null; save(()=>S.db.doc('sorteo/'+id).delete(), 'Quitado del sorteo'); });
+  const fra=document.getElementById('f-raspa');
+  if(fra) fra.onsubmit=e=>{ e.preventDefault(); const n=Math.min(50,Math.max(0,parseInt(document.getElementById('ra-n').value,10)||0)); const vence=document.getElementById('ra-vence').value||'';
+    crearRaspa(n, vence, document.getElementById('ra-quienes').value==='part'); };
+  q('[data-rb-go]',b=>b.onclick=()=>{ S.rbulk={ids:raspaList().filter(r=>waNumber(r.tel)).map(r=>r.id), i:0}; render(); });
+  q('[data-rb-next]',a=>a.onclick=()=>{ setTimeout(()=>{ if(S.rbulk){ S.rbulk.i++; render(); } },400); });
+  q('[data-rb-skip]',b=>b.onclick=()=>{ S.rbulk.i++; render(); });
+  q('[data-rb-end]',b=>b.onclick=()=>{ S.rbulk=null; render(); });
+  q('[data-ra-canje]',b=>b.onclick=()=>{ const r=S.raspa[b.dataset.raCanje]; save(()=>S.db.doc('raspa/'+r.id).update({canjeado:true, canjeadoEn:Date.now()}), `Canjeado: ${r.codigo} de ${r.nombre}`); });
+  const fcj=document.getElementById('f-canje');
+  if(fcj) fcj.onsubmit=e=>{ e.preventDefault(); const k=document.getElementById('ra-cod').value.trim().toUpperCase().replace(/\s/g,''); const r=raspaList().find(x=>x.codigo&&(x.codigo===k||x.codigo.replace('-','')===k.replace('-','')));
+    if(!r) return toast('Ese código no existe');
+    if(!r.raspado) return toast(`${r.nombre} todavía no raspó su tarjeta`);
+    if(r.canjeado) return toast(`Ese código ya se usó el ${fechaTs(r.canjeadoEn)}`);
+    if(r.vence && today()>r.vence) return toast(`El código venció el ${fechaCorta(r.vence)}`);
+    save(()=>S.db.doc('raspa/'+r.id).update({canjeado:true, canjeadoEn:Date.now()}), `Válido ✔ 10% OFF para ${r.nombre}. Marcado como usado`); };
+  q('[data-ra-reset]',b=>b.onclick=()=>{ S.confirm='ra-reset'; render(); });
+  q('[data-ra-reset-no]',b=>b.onclick=()=>{ S.confirm=null; render(); });
+  q('[data-ra-reset-yes]',b=>b.onclick=()=>{ S.confirm=null; save(async()=>{ const bt=S.db.batch(); raspaList().forEach(r=>bt.delete(S.db.doc('raspa/'+r.id))); bt.delete(S.db.doc('catalogo/raspa')); await bt.commit(); }, 'Tarjetas borradas'); });
   q('[data-cat-copy]',b=>b.onclick=async()=>{ try{ await navigator.clipboard.writeText(catalogoURL()); toast('Link copiado'); }catch(e){ toast('No se pudo copiar'); } });
   const fcat=document.getElementById('f-cat');
   if(fcat) fcat.onsubmit=e=>{ e.preventDefault(); const txt=document.getElementById('cat-tel').value.trim(); const num=waNumber(txt);
@@ -1405,6 +1499,8 @@ function startData(uid){
       if(m[uid].rol==='admin'){
         unsubs.push(S.db.collection('sorteo').onSnapshot(snap=>{ const o={}; snap.docs.forEach(d=>o[d.id]={id:d.id,...d.data()}); S.sorteo=o; S.sorteoReady=true; S.sorteoErr=null; scheduleRender(); }, err=>{ console.error('sorteo',err); S.sorteoErr=err.code||'error'; S.sorteoReady=true; scheduleRender(); }));
         unsubs.push(S.db.collectionGroup('visitas').onSnapshot(snap=>{ const o={}; snap.docs.forEach(d=>{ const pid=d.ref.parent.parent?.id; if(!pid) return; (o[pid]=o[pid]||{})[d.id]=d.data().t||0; }); S.sorteoVis=o; scheduleRender(); }, err=>{ console.error('visitas',err); }));
+        unsubs.push(S.db.collection('raspa').onSnapshot(snap=>{ const o={}; snap.docs.forEach(d=>o[d.id]={id:d.id,...d.data()}); S.raspa=o; S.raspaErr=null; scheduleRender(); }, err=>{ console.error('raspa',err); S.raspaErr=err.code||'error'; scheduleRender(); }));
+        unsubs.push(S.db.doc('catalogo/raspa').onSnapshot(d=>{ S.raspaCfg=d.exists?d.data():null; scheduleRender(); }, err=>{ console.error('raspa cfg',err); }));
         unsubs.push(S.db.doc('catalogo/sorteo').onSnapshot(d=>{ S.sorteoCfg=d.exists?d.data():null; scheduleRender(); }, err=>{ console.error('sorteo cfg',err); }));
       }
       if(m[uid].rol==='admin') unsubs.push(S.db.collection('stats').onSnapshot(snap=>{ const o={}; snap.docs.forEach(d=>o[d.id]=d.data()); S.stats=o; scheduleRender(); }, err=>{ console.error('stats',err); S.stats=null; })); }

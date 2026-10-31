@@ -69,6 +69,17 @@ service cloud.firestore {
     }
     match /{path=**}/visitas/{dev} { allow read: if isAdmin(); }
 
+    // Raspa y gana: cada tarjeta se abre con su link (no se pueden listar) y se raspa una sola vez
+    match /raspa/{id} {
+      allow get: if true;
+      allow list, create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (resource.data.raspado == false
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['raspado','raspadoEn'])
+            && request.resource.data.raspado == true
+            && request.resource.data.raspadoEn is int);
+    }
+
     match /ventas/{id} {
       allow read: if isMember();
       allow create: if isMember() && request.resource.data.vendedor == request.auth.uid;
