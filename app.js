@@ -226,7 +226,7 @@ function viewSorteo(){
 // ---------- Raspa y gana (consuelo para los que no ganaron el sorteo) ----------
 // Cada persona recibe un link propio (raspa.html?c=TOKEN). La tarjeta se raspa una sola vez.
 // Los premios se reparten al crear las tarjetas: N con 10% OFF (código único) y el resto "gracias por participar".
-const RASPA_BASE = 'https://matipe851.github.io/control-vapes/raspa.html?c=';
+const RASPA_BASE = 'https://vapdmraspagana.web.app/?c=';
 const raspaLink = r => RASPA_BASE + r.id;
 const rndStr = (n, abc) => { const a=crypto.getRandomValues(new Uint32Array(n)); return [...a].map(x=>abc[x%abc.length]).join(''); };
 const fechaCorta = iso => { if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${d}/${m}`; };
@@ -253,7 +253,7 @@ function viewRaspa(){
         <button class="btn" type="submit">Crear tarjetas</button>
       </form>
       <p class="sub">Los premios se reparten al azar al crear las tarjetas. Ninguna trae el vape.</p>
-      <div class="split"><span class="sub">Probar cómo se ven:</span><a class="btn ghost sm" href="raspa.html?demo=10off" target="_blank" rel="noopener" style="text-decoration:none">Tarjeta con 10% OFF</a><a class="btn ghost sm" href="raspa.html?demo=gracias" target="_blank" rel="noopener" style="text-decoration:none">Tarjeta sin premio</a></div></section>`;
+      <div class="split"><span class="sub">Probar cómo se ven:</span><a class="btn ghost sm" href="https://vapdmraspagana.web.app/?demo=10off" target="_blank" rel="noopener" style="text-decoration:none">Tarjeta con 10% OFF</a><a class="btn ghost sm" href="https://vapdmraspagana.web.app/?demo=gracias" target="_blank" rel="noopener" style="text-decoration:none">Tarjeta sin premio</a></div></section>`;
   }
   const rasp=list.filter(r=>r.raspado), premios=list.filter(r=>r.premio==='10off'), fin=rasp.length===list.length;
   const rb=S.rbulk; const pend=list.filter(r=>waNumber(r.tel));
