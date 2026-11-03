@@ -793,7 +793,7 @@ function viewStock(){
   ${admin?`<section class="panel"><div class="panel-head"><h2>Agregar sabor</h2><span class="sub">Aparece al toque en Ventas y Compras</span></div>
   <form class="form" id="f-prod" autocomplete="off">
     <label>Sabor<input id="p-sabor" required maxlength="50" placeholder="Grape Ice"></label>
-    <label>Modelo<input id="p-modelo" maxlength="40" value="Elf Bar Ice King"></label>
+    <label>Marca / modelo<input id="p-modelo" maxlength="40" list="dl-modelos" value="Elf Bar Ice King"><datalist id="dl-modelos">${[...new Set(['Elf Bar Ice King','EBCREATE BC PRO',...Object.values(S.prods).map(p=>p.modelo).filter(Boolean)])].map(m=>`<option value="${esc(m)}">`).join('')}</datalist></label>
     <label>Puffs<input id="p-puffs" type="number" min="0" value="40000"></label>
     <label>Costo unitario en US$<input id="p-usd" type="number" min="0" step="0.01" placeholder="US$"></label>
     <label>o costo en pesos<input id="p-costo" type="number" min="0" placeholder="$"></label>
