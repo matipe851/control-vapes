@@ -523,7 +523,7 @@ function render(){
   syncSorteoClientes();
 }
 function screen(msg, logout){
-  return `<div class="auth"><div class="auth-card"><div class="brand"><div class="brand-mark">CV</div><h1>Control Vapes</h1></div><p>${msg}</p>${logout?'<button class="btn ghost" id="logout">Salir</button>':''}</div></div>`;
+  return `<div class="auth"><div class="auth-card"><div class="brand"><h1 class="logo" aria-label="vap.dm, control de ventas"><span aria-hidden="true">vap</span><svg viewBox="0 0 58 270" aria-hidden="true"><path d="M30 70 C 18 56, 42 46, 30 30 C 22 20, 34 10, 30 2" stroke="currentColor" stroke-width="6" fill="none" stroke-linecap="round" opacity=".45"/><path d="M19 92 L39 92 L35 76 L23 76 Z" fill="var(--fg)"/><rect x="4" y="92" width="50" height="170" rx="16" fill="currentColor"/><rect x="16" y="200" width="26" height="34" rx="7" fill="#fff"/></svg><span aria-hidden="true">dm</span></h1><span class="brand-sub">Control de ventas</span></div><p>${msg}</p>${logout?'<button class="btn ghost" id="logout">Salir</button>':''}</div></div>`;
 }
 // En el celular las tablas se muestran como tarjetas: cada celda lleva el nombre de su columna
 function labelTables(){
@@ -537,7 +537,7 @@ function bindLogout(){ const b=document.getElementById('logout'); if(b) b.onclic
 
 function viewSetup(){
   return `<div class="auth"><form class="auth-card" id="f-setup" autocomplete="off">
-    <div class="brand"><div class="brand-mark">CV</div><h1>Control Vapes</h1></div>
+    <div class="brand"><h1 class="logo" aria-label="vap.dm, control de ventas"><span aria-hidden="true">vap</span><svg viewBox="0 0 58 270" aria-hidden="true"><path d="M30 70 C 18 56, 42 46, 30 30 C 22 20, 34 10, 30 2" stroke="currentColor" stroke-width="6" fill="none" stroke-linecap="round" opacity=".45"/><path d="M19 92 L39 92 L35 76 L23 76 Z" fill="var(--fg)"/><rect x="4" y="92" width="50" height="170" rx="16" fill="currentColor"/><rect x="16" y="200" width="26" height="34" rx="7" fill="#fff"/></svg><span aria-hidden="true">dm</span></h1><span class="brand-sub">Control de ventas</span></div>
     <p>Primera vez: creá la cuenta de administrador. Después vas a poder dar de alta a cada vendedor desde la pestaña Usuarios.</p>
     <label>Tu nombre<input id="s-nombre" required maxlength="40" placeholder="Matías"></label>
     <label>Usuario<input id="s-user" required maxlength="24" placeholder="matias" autocapitalize="none"></label>
@@ -548,7 +548,7 @@ function viewSetup(){
 }
 function viewLogin(){
   return `<div class="auth"><form class="auth-card" id="f-login">
-    <div class="brand"><div class="brand-mark">CV</div><h1>Control Vapes</h1></div>
+    <div class="brand"><h1 class="logo" aria-label="vap.dm, control de ventas"><span aria-hidden="true">vap</span><svg viewBox="0 0 58 270" aria-hidden="true"><path d="M30 70 C 18 56, 42 46, 30 30 C 22 20, 34 10, 30 2" stroke="currentColor" stroke-width="6" fill="none" stroke-linecap="round" opacity=".45"/><path d="M19 92 L39 92 L35 76 L23 76 Z" fill="var(--fg)"/><rect x="4" y="92" width="50" height="170" rx="16" fill="currentColor"/><rect x="16" y="200" width="26" height="34" rx="7" fill="#fff"/></svg><span aria-hidden="true">dm</span></h1><span class="brand-sub">Control de ventas</span></div>
     <p>Iniciá sesión para cargar ventas y ver las métricas.</p>
     <label>Usuario<input id="l-user" required autocapitalize="none" autocomplete="username"></label>
     <label>Contraseña<input id="l-pass" type="password" required autocomplete="current-password"></label>
@@ -567,7 +567,7 @@ function viewShell(allReady){
   const body = !allReady ? `<div class="panel"><p class="empty">Cargando datos…</p></div>` :
     ({resumen:viewResumen, ventas:viewVentas, stock:viewStock, clientes:viewClientes, compras:viewCompras, fiado:viewFiado, sabores:viewMatrix, usuarios:viewUsuarios, catalogo:viewCatalogo, sorteo:viewSorteo, asesor:viewAsesor, cuenta:viewCuenta, caja:viewCaja})[S.tab]();
   return `<header class="top"><div class="top-in">
-      <div class="top-row"><div class="brand"><div class="brand-mark">CV</div><h1>Control Vapes</h1></div>
+      <div class="top-row"><div class="brand"><h1 class="logo" aria-label="vap.dm, control de ventas"><span aria-hidden="true">vap</span><svg viewBox="0 0 58 270" aria-hidden="true"><path d="M30 70 C 18 56, 42 46, 30 30 C 22 20, 34 10, 30 2" stroke="currentColor" stroke-width="6" fill="none" stroke-linecap="round" opacity=".45"/><path d="M19 92 L39 92 L35 76 L23 76 Z" fill="var(--fg)"/><rect x="4" y="92" width="50" height="170" rx="16" fill="currentColor"/><rect x="16" y="200" width="26" height="34" rx="7" fill="#fff"/></svg><span aria-hidden="true">dm</span></h1><span class="brand-sub">Control de ventas</span></div>
         <div class="who"><span><b>${esc(me?.nombre||me?.usuario||'')}</b> · ${admin?'Administrador':'Vendedor'}</span><button class="btn ghost sm" id="logout">Salir</button></div></div>
       <nav class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" data-tab="${k}" aria-selected="${S.tab===k}">${l}</button>`).join('')}</nav>
     </div></header><main>${body}</main>`;
