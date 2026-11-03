@@ -805,7 +805,7 @@ function viewStock(){
   ${viewPedido()}
   <section class="panel"><div class="panel-head"><h2>Stock por sabor</h2><span class="sub">Stock actual = inicial + compras − ventas</span></div>
   ${admin&&prods.length?`<div class="split note" style="color:var(--fg)"><span>Costo en US$ para <b>todos</b> los sabores</span><input id="usd-all" type="number" min="0" step="0.01" placeholder="US$" style="width:110px"><button class="btn sm" data-usd-all>Aplicar</button>
-    <span class="sub">${S.blue?`Se pasa a pesos con el blue promedio de hoy (${money(S.blue.prom)})`:(S.blueErr||'Buscando cotización del dólar…')}</span></div>`:''}
+    <span class="sub">${S.blue?`Se pasa a pesos con el dólar blue venta de hoy (${money(S.blue.prom)})`:(S.blueErr||'Buscando cotización del dólar…')}</span></div>`:''}
   ${prods.length?`<div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th>Modelo</th><th class="r">Costo US$</th><th class="r">Costo $</th><th class="r">Precio</th><th class="r">Vendidas</th><th class="r">Stock</th><th>Por precio</th><th>Estado</th>${admin?'<th></th>':''}</tr></thead><tbody>
   ${prods.map(p=>{const s=stockOf(p.id); const st= s<=0?['Sin stock','bad']: s<=(Number(p.stockMin)||0)?['Reponer','warn']:['OK','ok'];
     return `<tr><td>${admin&&S.renProd===p.id?`<span class="split" style="flex-wrap:nowrap"><input id="ren-in" maxlength="50" value="${esc(p.sabor)}" style="width:160px" aria-label="Nuevo nombre"><button class="btn sm" data-ren-save="${p.id}">Guardar</button><button class="btn ghost sm" data-ren-cancel>Cancelar</button></span>`
@@ -814,7 +814,7 @@ function viewStock(){
     <td class="r">${admin?`<input class="num" style="width:96px;text-align:right" type="number" min="0" data-edit="${p.id}" data-f="costo" value="${Number(p.costo)||''}" placeholder="$" aria-label="Costo de ${esc(p.sabor)}">`:money(p.costo)}${p.costoUSD&&p.tc?`<br><span class="sub num" style="white-space:nowrap">× ${money(p.tc)}</span>`:''}</td>
     <td class="r">${admin?`<input class="num" style="width:96px;text-align:right" type="number" min="0" data-edit="${p.id}" data-f="precio" value="${Number(p.precio)||''}" placeholder="$" aria-label="Precio de ${esc(p.sabor)}">`:money(p.precio)}</td>
     <td class="r num">${sold[p.id]||0}</td><td class="r num"><b>${s}</b></td><td class="sub">${(()=>{const vs=variantsOf(p.id).filter(g=>g.restante>0); return vs.length>1? vs.map(g=>`<span style="white-space:nowrap">${g.restante} a ${money(g.precio)} <span title="costo">(c. ${money(g.costo)})</span></span>`).join('<br>') : '—';})()}</td><td><span class="pill ${st[1]}">${st[0]}</span></td>${admin?`<td class="r">${delBtn('productos',p.id)}</td>`:''}</tr>`}).join('')}
-  </tbody></table></div>${admin?'<p class="sub">Si ponés el costo en US$, el costo en pesos se calcula solo con el blue promedio del día y queda guardada la cotización. Costo y precio de acá son los del stock inicial (y se usan de base para nuevas reposiciones). Cada reposición tiene su propio costo y precio, que se editan en Compras. Si un sabor tiene unidades a precios distintos, se ven separadas en "Por precio" y en Ventas.</p>':''}`:`<p class="empty">Todavía no hay sabores cargados.</p>`}
+  </tbody></table></div>${admin?'<p class="sub">Si ponés el costo en US$, el costo en pesos se calcula solo con el dólar blue venta del día y queda guardada la cotización. Costo y precio de acá son los del stock inicial (y se usan de base para nuevas reposiciones). Cada reposición tiene su propio costo y precio, que se editan en Compras. Si un sabor tiene unidades a precios distintos, se ven separadas en "Por precio" y en Ventas.</p>':''}`:`<p class="empty">Todavía no hay sabores cargados.</p>`}
   </section>`;
 }
 
@@ -850,7 +850,7 @@ async function cargarBlue(force){
   try{ const r=await fetch('https://dolarapi.com/v1/dolares/blue',{cache:'no-store'}); if(!r.ok) throw new Error(r.status);
     const d=await r.json(); const compra=Number(d.compra), venta=Number(d.venta);
     if(!(compra>0&&venta>0)) throw new Error('sin datos');
-    S.blue={compra, venta, prom:Math.round((compra+venta)/2), fecha:d.fechaActualizacion, cargado:Date.now()};
+    S.blue={compra, venta, prom:Math.round(venta), fecha:d.fechaActualizacion, cargado:Date.now()};
   }catch(e){ console.error(e); S.blueErr='No se pudo traer la cotización. Escribila a mano.'; }
   S.bluePend=false; scheduleRender();
 }
@@ -948,7 +948,7 @@ function asesor(){
 }
 function textoAsesor(a){
   const L=[`Sos mi asesor financiero para un pequeño negocio de reventa de Elf Bar Ice King 40K en Buenos Aires. Pago la mercadería en dólares (blue). Analizá estos datos y decime qué precio único poner, qué sabores comprar, cuáles liquidar (con combos, no bajando el precio de un sabor) y cómo mejorar la ganancia. Sé concreto y con números.`,
-  ``,`Dólar blue promedio hoy: ${a.blue?money(a.blue):'s/d'} · última compra a: ${a.ultTc?money(a.ultTc):'s/d'} · costo promedio US$ ${a.usdProm?a.usdProm.toFixed(2):'s/d'}`,
+  ``,`Dólar blue venta hoy: ${a.blue?money(a.blue):'s/d'} · última compra a: ${a.ultTc?money(a.ultTc):'s/d'} · costo promedio US$ ${a.usdProm?a.usdProm.toFixed(2):'s/d'}`,
   `Precio de referencia del mercado online: ${money(a.cfg.ref)} · margen objetivo ${a.cfg.margen}%`,
   `Últimos 30 días: facturación ${money(a.fact)}, ganancia ${money(a.gan)}, descuentos ${money(a.desc)}, fiado pendiente ${money(a.deuda)}`,
   `Stock: ${money(a.capital)} a costo, ${money(a.valorVenta)} a precio de venta`,``,
@@ -960,7 +960,7 @@ function textoAsesor(a){
 function viewAsesor(){
   const a=asesor(); const c=a.cfg;
   return `<section class="panel"><div class="panel-head"><div><h2>Asesor financiero</h2><span class="sub">Analiza tus costos en dólares, el blue de hoy, la rotación de cada sabor y tu margen objetivo.</span></div>
-    <span class="sub">${a.blue?`Blue promedio hoy <b>${money(a.blue)}</b>`:(S.blueErr||'Buscando cotización…')}</span></div>
+    <span class="sub">${a.blue?`Blue venta hoy <b>${money(a.blue)}</b>`:(S.blueErr||'Buscando cotización…')}</span></div>
     <section class="kpis">
       <div class="kpi"><span class="l">Ganancia 30 días</span><span class="v num">${money(a.gan)}</span><span class="h">${a.fact?`margen real ${pct(a.gan/a.fact)} · objetivo ${c.margen}%`:'sin ventas'}</span></div>
       <div class="kpi"><span class="l">Capital en stock</span><span class="v num">${money(a.capital)}</span><span class="h">${a.capitalRepo&&a.capitalRepo!==a.capital?`reponerlo hoy cuesta ${money(a.capitalRepo)}`:'a costo de compra'}</span></div>
@@ -1034,16 +1034,16 @@ function viewCompras(){
     <label>Pagado en<select id="k-mon"><option value="USD" ${S.kf.mon!=='ARS'?'selected':''}>Dólares (US$)</option><option value="ARS" ${S.kf.mon==='ARS'?'selected':''}>Pesos ($)</option></select></label>
     ${S.kf.mon!=='ARS'
       ? `<label>Costo unitario en US$<input type="number" id="k-usd" min="0" step="0.01" placeholder="US$" value="${esc(S.kf.usd||'')}"></label>
-         <label>Dólar blue (promedio)<input type="number" id="k-tc" min="0" step="1" placeholder="${S.blue?S.blue.prom:'$'}" value="${esc(S.kf.tc||'')}"></label>`
+         <label>Dólar blue (venta)<input type="number" id="k-tc" min="0" step="1" placeholder="${S.blue?S.blue.prom:'$'}" value="${esc(S.kf.tc||'')}"></label>`
       : `<label>Costo unitario<input type="number" id="k-costo" min="0" placeholder="$" value="${esc(S.kf.costo||'')}"></label>`}
     <label>Precio de venta<input type="number" id="k-precio" min="0" placeholder="$" value="${esc(S.kf.precio||'')}"></label>
     <button class="btn" type="submit">Guardar compra</button>
   </form>
   ${S.kf.mon!=='ARS'?`<div class="note" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
-    <span>${S.blue?`Dólar blue hoy: compra <b>${money(S.blue.compra)}</b> · venta <b>${money(S.blue.venta)}</b> → promedio <b>${money(S.blue.prom)}</b>${S.blue.fecha?` <span class="sub">(act. ${new Date(S.blue.fecha).toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'})})</span>`:''}`:(S.blueErr||'Buscando cotización del dólar blue…')}
+    <span>${S.blue?`Dólar blue hoy: compra <b>${money(S.blue.compra)}</b> · venta <b>${money(S.blue.venta)}</b> → se usa <b>${money(S.blue.prom)}</b> (venta)${S.blue.fecha?` <span class="sub">(act. ${new Date(S.blue.fecha).toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'})})</span>`:''}`:(S.blueErr||'Buscando cotización del dólar blue…')}
       ${Number(S.kf.usd)>0&&tcUsado()?`<br>Costo en pesos: <b class="num">${usd(Number(S.kf.usd))} × ${money(tcUsado())} = ${money(Math.round(Number(S.kf.usd)*tcUsado()))}</b> por unidad${Number(S.kf.cant)>1?` · total <b class="num">${money(Math.round(Number(S.kf.usd)*tcUsado()*Number(S.kf.cant)))}</b>`:''}`:''}</span>
     <button type="button" class="btn ghost sm" data-blue-refresh>Actualizar cotización</button></div>
-    <p class="sub">La cotización es el promedio entre compra y venta del blue (la misma que muestra DolarHoy). Si pagaste a otro valor, escribilo en "Dólar blue". Queda guardada en cada compra.</p>`:''}`:`<p class="note">Solo el administrador registra compras de mercadería.</p>`}</section>
+    <p class="sub">La cotización que se usa es el precio de venta del dólar blue (el mismo que muestra DolarHoy). Si pagaste a otro valor, escribilo en "Dólar blue". Queda guardada en cada compra.</p>`:''}`:`<p class="note">Solo el administrador registra compras de mercadería.</p>`}</section>
   <section class="panel"><div class="panel-head"><div><h2>Compras</h2><span class="sub num">Invertido: ${money(inv)}${invUsd?` · ${usd(invUsd)} en compras en dólares`:''}</span></div></div>
   ${list.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Sabor</th><th class="r">Cant.</th><th class="r">Costo u.</th><th class="r">Precio u.</th><th class="r">Total</th><th>Cargó</th>${admin?'<th></th>':''}</tr></thead><tbody>
   ${list.map(c=>`<tr><td class="num">${fmtDate(c.fecha)}</td><td>${flDot(prodName(c.productoId))}${esc(prodName(c.productoId))}</td><td class="r num">${c.cantidad}</td><td class="r">${admin?cInput(c,'costoUnit'):money(c.costoUnit)}${c.costoUSD?`<br><span class="sub num" style="white-space:nowrap">${usd(c.costoUSD)} × ${money(c.tc)}</span>`:''}</td><td class="r">${admin?cInput(c,'precioUnit'):money(c.precioUnit!=null?c.precioUnit:S.prods[c.productoId]?.precio)}</td><td class="r num">${money((c.cantidad||0)*(c.costoUnit||0))}</td><td>${esc(userName(c.vendedor))}</td>${admin?`<td class="r">${delBtn('compras',c.id)}</td>`:''}</tr>`).join('')}
@@ -1415,7 +1415,7 @@ function bindApp(){
     const extra={};
     if(enUsd){ const u=Number(document.getElementById('k-usd').value)||0; const tc=tcUsado();
       if(!(u>0)) return toast('Poné el costo en dólares'); if(!(tc>0)) return toast('Falta la cotización del dólar');
-      costo=Math.round(u*tc); Object.assign(extra,{moneda:'USD', costoUSD:u, tc, tcFuente: Number(S.kf.tc)?'manual':'blue promedio (DolarHoy)'}); }
+      costo=Math.round(u*tc); Object.assign(extra,{moneda:'USD', costoUSD:u, tc, tcFuente: Number(S.kf.tc)?'manual':'blue venta (DolarHoy)'}); }
     const otros=variantsOf(pid).filter(g=>g.restante>0&&(g.costo!==costo||g.precio!==precio));
     save(()=>S.db.collection('compras').add({fecha:document.getElementById('k-fecha').value, productoId:pid, cantidad:cant, costoUnit:costo, precioUnit:precio, ...extra, vendedor:S.me, creado:Date.now()}).then(()=>{ S.kf={mon:S.kf.mon, tc:S.kf.tc, fecha:S.kf.fecha}; render(); }),
       `Sumadas ${cant} de ${prodName(pid)}`+(otros.length?' · quedan separadas por tener otro costo/precio':'')); };
