@@ -2,21 +2,14 @@
    The one loud thing is flavor color: every flavor carries its own dot/bar color. Everything else stays quiet.
    Layout: sticky top bar with tab strip, single column of panels; key figures sit in one ruled strip. */
 :root{
-  --bg:#e9eef1; --surface:#ffffff; --surface-2:#f2f5f7; --fg:#18202c; --muted:#5d6876; --line:#d3dbe1; --line-2:#e3e8ec;
-  --brand:#d7141a; --accent:#2453d1; --accent-soft:#e3eafb; --accent-fg:#ffffff; --ice:#2a8fb0;
-  --ok:#17815a; --ok-soft:#dcf1e7; --warn:#a35f00; --warn-soft:#f8ecd6; --bad:#c13a46; --bad-soft:#f8e3e5;
+  --bg:#ffffff; --surface:#ffffff; --surface-2:#f7f5f5; --fg:#1c1c1f; --muted:#64646c; --line:#e6e1e1; --line-2:#f0ecec;
+  --brand:#d7141a; --accent:#d7141a; --accent-soft:#fde7e7; --accent-fg:#ffffff; --ice:#2a8fb0;
+  --ok:#17815a; --ok-soft:#dcf1e7; --warn:#a35f00; --warn-soft:#f8ecd6; --bad:#a3121a; --bad-soft:#fbe4e5;
   --display:"Archivo", system-ui, sans-serif;
   --body:"Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --r:12px; --r-sm:8px;
+  --r:12px; --r-sm:8px; color-scheme:light;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --brand:#ff4b4b; --bg:#0f1620; --surface:#16202c; --surface-2:#1c2835; --fg:#e4ebf2; --muted:#93a1b1; --line:#2a3846; --line-2:#22303d;
-  --accent:#86a8ff; --accent-soft:#1f2c4a; --accent-fg:#0d1422; --ice:#6cc6e4;
-  --ok:#5fd29f; --ok-soft:#15322a; --warn:#f0b357; --warn-soft:#352a15; --bad:#ff8790; --bad-soft:#3a1e24; color-scheme:dark}}
-:root[data-theme="dark"]{
-  --brand:#ff4b4b; --bg:#0f1620; --surface:#16202c; --surface-2:#1c2835; --fg:#e4ebf2; --muted:#93a1b1; --line:#2a3846; --line-2:#22303d;
-  --accent:#86a8ff; --accent-soft:#1f2c4a; --accent-fg:#0d1422; --ice:#6cc6e4;
-  --ok:#5fd29f; --ok-soft:#15322a; --warn:#f0b357; --warn-soft:#352a15; --bad:#ff8790; --bad-soft:#3a1e24; color-scheme:dark}
+/* vap.dm: siempre blanco con detalles rojos (sin modo oscuro) */
 
 *{box-sizing:border-box}
 html,body{background:var(--bg);color:var(--fg)}
@@ -57,7 +50,7 @@ label{display:grid;gap:5px;font-size:13px;color:var(--muted);font-weight:500}
 .err{color:var(--bad);font-size:13px;min-height:1em}
 
 /* app shell */
-.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);box-shadow:inset 0 3px 0 var(--brand)}
 .top-in{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:12px 0;display:grid;gap:8px}
 .top-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .who{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
@@ -70,7 +63,7 @@ label{display:grid;gap:5px;font-size:13px;color:var(--muted);font-weight:500}
 main{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:22px 64px;display:grid;gap:18px}
 .page-title{font-size:26px;font-weight:800;font-variation-settings:"wdth" 125;letter-spacing:-.01em}
 
-.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;display:grid;gap:14px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--line);box-shadow:0 1px 2px rgba(28,28,31,.04);border-radius:var(--r);padding:18px;display:grid;gap:14px;min-width:0}
 .panel h2{font-size:16px;font-weight:700}
 .panel-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .panel-head > div{display:grid;gap:2px}
