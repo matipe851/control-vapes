@@ -95,6 +95,11 @@ function catalogoItems(){
     return {id:p.id, sabor:p.sabor, emoji:frutaDe(p.sabor)||'💨', ice:esIce(p.sabor), precio, pocas:st>0&&st<=2, max:Math.max(st,0), agotado:st<=0};
   }).filter(Boolean).sort((a,b)=>a.sabor.localeCompare(b.sabor));
 }
+const MODELOS = () => [...new Set(['Elf Bar Ice King','EBCREATE BC PRO',...Object.values(S.prods).map(p=>p.modelo).filter(Boolean)])];
+const esModeloBC = m => /bc ?pro/i.test(String(m||''));
+const BC_SUF = /\s*\(\s*bc ?pro\s*\)\s*$/i;
+// el catálogo separa las marcas por el "(BC Pro)" al final del nombre
+const nombreConModelo = (sabor, modelo) => { const base=String(sabor||'').replace(BC_SUF,'').trim(); return esModeloBC(modelo) ? `${base} (BC Pro)` : base; };
 let catTimer=null;
 function syncCatalogo(){
   if(S.users[S.me]?.rol!=='admin' || !S.catReady || S.catErr || !Object.values(S.ready).every(Boolean)) return;
@@ -796,7 +801,7 @@ function viewStock(){
   ${admin?`<section class="panel"><div class="panel-head"><h2>Agregar sabor</h2><span class="sub">Aparece al toque en Ventas y Compras</span></div>
   <form class="form" id="f-prod" autocomplete="off">
     <label>Sabor<input id="p-sabor" required maxlength="50" placeholder="Grape Ice"></label>
-    <label>Marca / modelo<input id="p-modelo" maxlength="40" list="dl-modelos" value="Elf Bar Ice King"><datalist id="dl-modelos">${[...new Set(['Elf Bar Ice King','EBCREATE BC PRO',...Object.values(S.prods).map(p=>p.modelo).filter(Boolean)])].map(m=>`<option value="${esc(m)}">`).join('')}</datalist></label>
+    <label>Marca<select id="p-modelo">${MODELOS().map(m=>`<option value="${esc(m)}" ${m===(S.ultModelo||'Elf Bar Ice King')?'selected':''}>${esc(m)}</option>`).join('')}</select></label>
     <label>Puffs<input id="p-puffs" type="number" min="0" value="40000"></label>
     <label>Costo unitario en US$<input id="p-usd" type="number" min="0" step="0.01" placeholder="US$"></label>
     <label>o costo en pesos<input id="p-costo" type="number" min="0" placeholder="$"></label>
@@ -812,7 +817,7 @@ function viewStock(){
   ${prods.length?`<div class="tbl-wrap"><table><thead><tr><th>Sabor</th><th>Modelo</th><th class="r">Costo US$</th><th class="r">Costo $</th><th class="r">Precio</th><th class="r">Vendidas</th><th class="r">Stock</th><th>Por precio</th><th>Estado</th>${admin?'<th></th>':''}</tr></thead><tbody>
   ${prods.map(p=>{const s=stockOf(p.id); const st= s<=0?['Sin stock','bad']: s<=(Number(p.stockMin)||0)?['Reponer','warn']:['OK','ok'];
     return `<tr><td>${admin&&S.renProd===p.id?`<span class="split" style="flex-wrap:nowrap"><input id="ren-in" maxlength="50" value="${esc(p.sabor)}" style="width:160px" aria-label="Nuevo nombre"><button class="btn sm" data-ren-save="${p.id}">Guardar</button><button class="btn ghost sm" data-ren-cancel>Cancelar</button></span>`
-      :`${flDot(p.sabor)}<b>${esc(p.sabor)}</b>${admin?` <button class="btn ghost sm" data-ren="${p.id}" aria-label="Cambiar nombre de ${esc(p.sabor)}" title="Cambiar nombre">✏️</button>`:''}`}</td><td class="sub">${esc(p.modelo||'')} ${p.puffs?`· ${n0.format(p.puffs)} puffs`:''}</td>
+      :`${flDot(p.sabor)}<b>${esc(p.sabor)}</b>${admin?` <button class="btn ghost sm" data-ren="${p.id}" aria-label="Cambiar nombre de ${esc(p.sabor)}" title="Cambiar nombre">✏️</button>`:''}`}</td><td class="sub">${admin?`<select data-mod="${p.id}" aria-label="Marca de ${esc(p.sabor)}" style="max-width:160px">${(()=>{ const ef=BC_SUF.test(p.sabor)&&!esModeloBC(p.modelo)?'EBCREATE BC PRO':(p.modelo||''); return [...new Set([...(ef?[]:['']),...MODELOS()])].map(m=>`<option value="${esc(m)}" ${m===ef?'selected':''}>${m?esc(m):'—'}</option>`).join(''); })()}</select>`:esc(p.modelo||'')} ${p.puffs?`· ${n0.format(p.puffs)} puffs`:''}</td>
     <td class="r">${admin?`<input class="num" style="width:84px;text-align:right" type="number" min="0" step="0.01" data-usd="${p.id}" value="${Number(p.costoUSD)||''}" placeholder="US$" aria-label="Costo en dólares de ${esc(p.sabor)}">`:(p.costoUSD?usd(p.costoUSD):'—')}</td>
     <td class="r">${admin?`<input class="num" style="width:96px;text-align:right" type="number" min="0" data-edit="${p.id}" data-f="costo" value="${Number(p.costo)||''}" placeholder="$" aria-label="Costo de ${esc(p.sabor)}">`:money(p.costo)}${p.costoUSD&&p.tc?`<br><span class="sub num" style="white-space:nowrap">× ${money(p.tc)}</span>`:''}</td>
     <td class="r">${admin?`<input class="num" style="width:96px;text-align:right" type="number" min="0" data-edit="${p.id}" data-f="precio" value="${Number(p.precio)||''}" placeholder="$" aria-label="Precio de ${esc(p.sabor)}">`:money(p.precio)}</td>
@@ -1369,15 +1374,18 @@ function bindApp(){
 
   const fp=document.getElementById('f-prod');
   if(fp) fp.onsubmit=e=>{ e.preventDefault(); const v=id=>document.getElementById(id).value;
-    const sabor=v('p-sabor').trim(); if(!sabor) return;
+    const modelo=v('p-modelo').trim(); const sabor=nombreConModelo(v('p-sabor').trim(), modelo); if(!sabor) return; S.ultModelo=modelo;
     if(Object.values(S.prods).some(p=>p.sabor.toLowerCase()===sabor.toLowerCase())) return toast('Ese sabor ya existe');
     const pu=Number(v('p-usd'))||0; const bl=S.blue?.prom||0;
     if(pu && !bl) return toast('Todavía no cargó la cotización del dólar. Probá en unos segundos');
     const extraU = pu ? {costoUSD:pu, tc:bl} : {};
-    save(()=>S.db.collection('productos').add({sabor, modelo:v('p-modelo').trim(), puffs:Number(v('p-puffs'))||0, costo: pu? Math.round(pu*bl) : (Number(v('p-costo'))||0), ...extraU, precio:Number(v('p-precio'))||0, stockInicial:Number(v('p-stock'))||0, stockMin:Number(v('p-min'))||0, creado:Date.now()}), 'Sabor agregado'); };
+    save(()=>S.db.collection('productos').add({sabor, modelo, puffs:Number(v('p-puffs'))||0, costo: pu? Math.round(pu*bl) : (Number(v('p-costo'))||0), ...extraU, precio:Number(v('p-precio'))||0, stockInicial:Number(v('p-stock'))||0, stockMin:Number(v('p-min'))||0, creado:Date.now()}), 'Sabor agregado'); };
   if(S.tab==='stock') cargarBlue();
   q('[data-ren]',b=>b.onclick=()=>{ S.renProd=b.dataset.ren; render(); const i=document.getElementById('ren-in'); if(i){ i.focus(); i.select(); } });
   q('[data-ren-cancel]',b=>b.onclick=()=>{ S.renProd=null; render(); });
+  q('[data-mod]',sel=>sel.onchange=()=>{ const id=sel.dataset.mod, p=S.prods[id]; if(!p) return; const modelo=sel.value; const nuevo=nombreConModelo(p.sabor, modelo);
+    if(nuevo!==p.sabor && Object.values(S.prods).some(o=>o.id!==id && o.sabor.toLowerCase()===nuevo.toLowerCase())){ toast('Ya hay un sabor con ese nombre en esa marca'); return render(); }
+    save(()=>S.db.doc('productos/'+id).update({modelo, sabor:nuevo}), `${nuevo} ahora es ${modelo}`); });
   const renSave=id=>{ const nuevo=(document.getElementById('ren-in')?.value||'').trim(); const viejo=S.prods[id]?.sabor;
     if(!nuevo) return toast('Escribí un nombre'); if(nuevo===viejo){ S.renProd=null; return render(); }
     if(Object.values(S.prods).some(p=>p.id!==id && p.sabor.toLowerCase()===nuevo.toLowerCase())) return toast('Ya hay un sabor con ese nombre');
