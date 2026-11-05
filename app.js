@@ -92,14 +92,21 @@ const catalogoActivo = () => !!(S.catalogo && S.catalogo.activo!==false && S.cat
 function catalogoItems(){
   return Object.values(S.prods).map(p=>{ const st=stockOf(p.id);
     const vg=variantsOf(p.id).filter(g=>g.restante>0); const precio=(vg[0]&&vg[0].precio)||Number(p.precio)||0;
-    return {id:p.id, sabor:p.sabor, emoji:frutaDe(p.sabor)||'💨', ice:esIce(p.sabor), precio, pocas:st>0&&st<=2, max:Math.max(st,0), agotado:st<=0};
+    return {id:p.id, sabor:saborCatalogo(p), emoji:frutaDe(p.sabor)||'💨', ice:esIce(p.sabor), precio, pocas:st>0&&st<=2, max:Math.max(st,0), agotado:st<=0};
   }).filter(Boolean).sort((a,b)=>a.sabor.localeCompare(b.sabor));
 }
 const MODELOS = () => [...new Set(['Elf Bar Ice King','EBCREATE BC PRO',...Object.values(S.prods).map(p=>p.modelo).filter(Boolean)])];
-const esModeloBC = m => /bc ?pro/i.test(String(m||''));
-const BC_SUF = /\s*\(\s*bc ?pro\s*\)\s*$/i;
-// el catálogo separa las marcas por el "(BC Pro)" al final del nombre
-const nombreConModelo = (sabor, modelo) => { const base=String(sabor||'').replace(BC_SUF,'').trim(); return esModeloBC(modelo) ? `${base} (BC Pro)` : base; };
+const esModeloBC = m => /bc ?pro|ebcreate/i.test(String(m||''));
+const BC_SUF = /\s*\(\s*(bc ?pro|ebcreate)\s*\)\s*$/i;
+// en la planilla los sabores de EBCREATE terminan en "(EBCREATE)"; al catálogo se le manda "(BC Pro)", que es lo que usa para separar las marcas
+const nombreConModelo = (sabor, modelo) => { const base=String(sabor||'').replace(BC_SUF,'').trim(); return esModeloBC(modelo) ? `${base} (EBCREATE)` : base; };
+const saborCatalogo = p => (BC_SUF.test(p.sabor)||esModeloBC(p.modelo)) ? `${String(p.sabor).replace(BC_SUF,'').trim()} (BC Pro)` : p.sabor;
+let migroEB=false;
+function migrarEBCREATE(){
+  if(migroEB || S.users[S.me]?.rol!=='admin' || !S.ready.productos) return;
+  const viejos=Object.values(S.prods).filter(p=>/\(\s*bc ?pro\s*\)\s*$/i.test(p.sabor||'')); migroEB=true; if(!viejos.length) return;
+  const b=S.db.batch(); viejos.forEach(p=>b.update(S.db.doc('productos/'+p.id),{sabor:nombreConModelo(p.sabor,'EBCREATE BC PRO')})); b.commit().catch(err=>{ console.error(err); migroEB=false; });
+}
 let catTimer=null;
 function syncCatalogo(){
   if(S.users[S.me]?.rol!=='admin' || !S.catReady || S.catErr || !Object.values(S.ready).every(Boolean)) return;
@@ -527,6 +534,7 @@ function render(){
   labelTables();
   if(openDetails){ const d=document.getElementById('msg-det'); if(d) d.open=true; }
   if(active){ const el=document.getElementById(active); if(el && el.tagName!=='BUTTON' && el.tagName!=='A') el.focus(); }
+  migrarEBCREATE();
   syncCatalogo();
   syncSorteoClientes();
 }
